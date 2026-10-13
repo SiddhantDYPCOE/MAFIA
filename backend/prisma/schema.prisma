@@ -1,0 +1,87 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum RoomStatus {
+  LOBBY
+  PLAYING
+  FINISHED
+}
+
+enum PlayerRole {
+  MAFIA
+  DOCTOR
+  POLICE
+  CIVILIAN
+}
+
+enum GamePhase {
+  LOBBY
+  ROLE_ASSIGNMENT
+  NIGHT
+  DISCUSSION
+  VOTING
+  ELIMINATION
+  FINISHED
+}
+
+model GameRoom {
+  id                 String     @id @default(cuid())
+  code               String     @unique
+  status             RoomStatus @default(LOBBY)
+  phase              GamePhase  @default(LOBBY)
+  currentRoundNumber Int        @default(0)
+  hostPlayerId       String?
+
+  players Player[]
+  rounds  GameRound[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
+model Player {
+  id                  String      @id @default(cuid())
+  roomId              String
+  username            String
+  isHost              Boolean     @default(false)
+  role                PlayerRole?
+  reconnectSecretHash String
+  isConnected         Boolean     @default(false)
+  isAlive             Boolean     @default(true)
+  joinedAt            DateTime    @default(now())
+  lastSeenAt          DateTime    @default(now())
+
+  room GameRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, username])
+  @@index([roomId, isConnected])
+  @@index([roomId, role])
+}
+
+model GameRound {
+  id          String    @id @default(cuid())
+  roomId      String
+  roundNumber Int
+  phase       GamePhase @default(NIGHT)
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  room GameRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, roundNumber])
+  @@index([roomId, phase])
+}
