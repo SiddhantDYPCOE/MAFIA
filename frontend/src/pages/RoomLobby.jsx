@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Link,
@@ -347,8 +346,8 @@ export default function RoomLobby() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#0B0A12] text-gray-300">
-        <LoaderCircle className="mr-3 animate-spin" size={22} />
+      <div className="flex min-h-screen items-center justify-center bg-neutral-950 text-neutral-400">
+        <LoaderCircle className="mr-3 animate-spin" size={20} />
         Loading room...
       </div>
     );
@@ -356,15 +355,15 @@ export default function RoomLobby() {
 
   if (error && !room) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#0B0A12] px-5 text-white">
-        <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#15131F] p-7 text-center">
-          <Shield className="mx-auto text-red-400" size={36} />
-          <h1 className="mt-4 text-2xl font-bold">Unable to open room</h1>
-          <p className="mt-3 text-sm text-gray-400">{error}</p>
+      <div className="flex min-h-screen items-center justify-center bg-neutral-950 px-5 text-neutral-100">
+        <div className="w-full max-w-md border border-neutral-800 bg-neutral-900 p-7">
+          <Shield className="text-red-400" size={28} />
+          <h1 className="mt-4 text-xl font-semibold">Unable to open room</h1>
+          <p className="mt-2 text-sm text-neutral-400">{error}</p>
 
           <button
             onClick={() => navigate("/")}
-            className="mt-6 rounded-xl bg-violet-600 px-5 py-3 font-semibold hover:bg-violet-500"
+            className="mt-6 border border-neutral-100 bg-neutral-100 px-5 py-2.5 text-sm font-semibold text-neutral-950 transition hover:bg-neutral-300"
           >
             Back to home
           </button>
@@ -373,78 +372,70 @@ export default function RoomLobby() {
     );
   }
 
+  const statusDot =
+    socketStatus === "connected"
+      ? "bg-emerald-400"
+      : socketStatus === "disconnected"
+        ? "bg-red-400"
+        : "bg-amber-400";
+
+  const statusText =
+    socketStatus === "connected"
+      ? "Live lobby"
+      : socketStatus === "disconnected"
+        ? "Disconnected"
+        : "Connecting...";
+
   return (
-    <div className="min-h-screen bg-[#0B0A12] px-5 py-6 text-white sm:px-10">
-      <header className="mx-auto flex max-w-6xl items-center justify-between">
+    <div className="min-h-screen bg-neutral-950 px-5 py-6 text-neutral-100 sm:px-10">
+      <header className="mx-auto flex max-w-5xl items-center justify-between border-b border-neutral-800 pb-5">
         <Link
           to="/"
-          className="inline-flex items-center gap-2 text-sm text-gray-400 transition hover:text-white"
+          className="inline-flex items-center gap-2 text-sm text-neutral-400 transition hover:text-white"
         >
-          <ArrowLeft size={18} />
+          <ArrowLeft size={16} />
           Leave lobby
         </Link>
 
         <div className="flex items-center gap-2">
-          <Moon className="text-violet-400" size={22} />
-          <span className="font-bold tracking-[0.2em]">MAFIA</span>
+          <Moon className="text-neutral-400" size={18} />
+          <span className="text-sm font-semibold tracking-widest">MAFIA</span>
         </div>
       </header>
 
-      <main className="mx-auto mt-10 max-w-6xl">
+      <main className="mx-auto mt-10 max-w-5xl">
         <div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-end">
           <div>
-            <div
-              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${socketStatus === "connected"
-                  ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
-                  : socketStatus === "disconnected"
-                    ? "border-red-500/20 bg-red-500/10 text-red-300"
-                    : "border-amber-500/20 bg-amber-500/10 text-amber-300"
-                }`}
-            >
-              <span
-                className={`h-2 w-2 rounded-full ${socketStatus === "connected"
-                    ? "bg-emerald-400"
-                    : socketStatus === "disconnected"
-                      ? "bg-red-400"
-                      : "bg-amber-400"
-                  }`}
-              />
-              {socketStatus === "connected"
-                ? "Live lobby"
-                : socketStatus === "disconnected"
-                  ? "Disconnected"
-                  : "Connecting to lobby..."}
+            <div className="inline-flex items-center gap-2 text-sm text-neutral-400">
+              <span className={`h-2 w-2 ${statusDot}`} />
+              {statusText}
             </div>
 
-            <h1 className="mt-4 text-4xl font-black sm:text-5xl">
-              The lobby<span className="text-violet-500">.</span>
-            </h1>
+            <h1 className="mt-3 text-4xl font-bold sm:text-5xl">Lobby</h1>
 
-            <p className="mt-3 text-gray-400">
+            <p className="mt-2 text-neutral-500">
               Invite your friends. Trust them at your own risk.
             </p>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-[#15131F] p-5 sm:min-w-64">
-            <p className="text-xs uppercase tracking-[0.2em] text-gray-500">
-              Room code
-            </p>
+          <div className="border border-neutral-800 bg-neutral-900 p-4 sm:min-w-64">
+            <p className="text-xs text-neutral-500">Room code</p>
 
-            <div className="mt-2 flex items-center justify-between gap-4">
-              <span className="font-mono text-2xl font-bold tracking-[0.2em]">
+            <div className="mt-1 flex items-center justify-between gap-4">
+              <span className="font-mono text-2xl font-semibold tracking-widest">
                 {roomCode}
               </span>
 
               <button
                 onClick={copyInvite}
                 title="Copy invite link"
-                className="rounded-lg border border-white/10 p-2.5 text-gray-300 transition hover:border-violet-400 hover:text-white"
+                className="border border-neutral-700 p-2 text-neutral-300 transition hover:border-neutral-300 hover:text-white"
               >
-                {copied ? <Check size={18} /> : <Copy size={18} />}
+                {copied ? <Check size={16} /> : <Copy size={16} />}
               </button>
             </div>
 
-            <p className="mt-2 text-xs text-gray-500">
+            <p className="mt-2 text-xs text-neutral-500">
               {copied
                 ? "Invite link copied!"
                 : "Share the link with your friends."}
@@ -455,73 +446,71 @@ export default function RoomLobby() {
         {error && room && (
           <p
             role="alert"
-            className="mt-5 rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-sm text-red-300"
+            className="mt-5 border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-300"
           >
             {error}
           </p>
         )}
 
-        <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
-          <section className="rounded-2xl border border-white/10 bg-[#15131F] p-5 sm:p-7">
-            <div className="flex items-center justify-between">
+        <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_300px]">
+          <section className="border border-neutral-800 bg-neutral-900">
+            <div className="flex items-center justify-between border-b border-neutral-800 px-5 py-4">
               <div>
-                <h2 className="text-xl font-bold">Players</h2>
-                <p className="mt-1 text-sm text-gray-500">
+                <h2 className="font-semibold">Players</h2>
+                <p className="mt-0.5 text-sm text-neutral-500">
                   Players currently in this room
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-sm text-gray-300">
-                <Users size={17} />
+              <div className="flex items-center gap-2 border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300">
+                <Users size={15} />
                 {players.length}
               </div>
             </div>
 
-            <div className="mt-6 space-y-3">
+            <div>
               {players.map((player, index) => (
                 <div
                   key={player.id}
-                  className="flex items-center gap-4 rounded-xl border border-white/5 bg-[#0F0D17] p-4"
+                  className="flex items-center gap-4 border-b border-neutral-800 px-5 py-3.5 last:border-b-0"
                 >
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-600/15 font-bold text-violet-300">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-neutral-700 bg-neutral-950 font-semibold text-neutral-300">
                     {player.username?.charAt(0)?.toUpperCase() || "?"}
                   </div>
 
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate font-semibold">
-                        {player.username}
-                      </p>
+                      <p className="truncate font-medium">{player.username}</p>
 
                       {player.isHost && (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-amber-400/10 px-2 py-1 text-xs text-amber-300">
-                          <Crown size={12} />
+                        <span className="inline-flex items-center gap-1 border border-amber-400/40 px-1.5 py-0.5 text-xs text-amber-300">
+                          <Crown size={11} />
                           Host
                         </span>
                       )}
 
                       {currentPlayer?.id === player.id && (
-                        <span className="rounded-md bg-violet-500/10 px-2 py-1 text-xs text-violet-300">
+                        <span className="border border-neutral-600 px-1.5 py-0.5 text-xs text-neutral-300">
                           You
                         </span>
                       )}
                     </div>
 
-                    <p className="mt-1 text-xs text-gray-500">
+                    <p className="mt-0.5 text-xs text-neutral-500">
                       Player {index + 1}
                     </p>
                   </div>
 
                   <div
                     className={`flex shrink-0 items-center gap-1.5 text-xs ${player.isConnected
-                        ? "text-emerald-400"
-                        : "text-gray-500"
+                      ? "text-emerald-400"
+                      : "text-neutral-500"
                       }`}
                   >
                     {player.isConnected ? (
-                      <Wifi size={15} />
+                      <Wifi size={14} />
                     ) : (
-                      <WifiOff size={15} />
+                      <WifiOff size={14} />
                     )}
                     {player.isConnected ? "Online" : "Offline"}
                   </div>
@@ -529,39 +518,39 @@ export default function RoomLobby() {
               ))}
 
               {players.length === 0 && (
-                <p className="py-8 text-center text-sm text-gray-500">
+                <p className="px-5 py-8 text-center text-sm text-neutral-500">
                   No players in this room yet.
                 </p>
               )}
             </div>
           </section>
 
-          <aside className="space-y-5">
-            <section className="rounded-2xl border border-white/10 bg-[#15131F] p-6">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-400/10 text-amber-300">
-                <Crown size={22} />
+          <aside className="space-y-4">
+            <section className="border border-neutral-800 bg-neutral-900 p-5">
+              <div className="flex items-center gap-2 text-amber-300">
+                <Crown size={18} />
+                <h2 className="font-semibold text-neutral-100">Your host</h2>
               </div>
 
-              <h2 className="mt-4 text-lg font-bold">Your host</h2>
-              <p className="mt-2 text-sm text-gray-400">
+              <p className="mt-3 text-sm text-neutral-200">
                 {host?.username || "Waiting for host"}
               </p>
 
-              <p className="mt-4 text-sm leading-6 text-gray-500">
+              <p className="mt-2 text-sm leading-6 text-neutral-500">
                 The host assigns roles and controls the game.
               </p>
             </section>
 
             {isHost && !gameStarted && (
-              <section className="rounded-2xl border border-violet-500/20 bg-violet-600/10 p-6">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-500/15 text-violet-300">
-                  <Swords size={22} />
+              <section className="border border-neutral-800 bg-neutral-900 p-5">
+                <div className="flex items-center gap-2 text-neutral-300">
+                  <Swords size={18} />
+                  <h2 className="font-semibold text-neutral-100">
+                    Ready to set the roles?
+                  </h2>
                 </div>
 
-                <h2 className="mt-4 text-lg font-bold">
-                  Ready to set the roles?
-                </h2>
-                <p className="mt-2 text-sm leading-6 text-gray-400">
+                <p className="mt-2 text-sm leading-6 text-neutral-500">
                   Configure Mafia, Doctor, Police, and Civilian roles before
                   the game starts.
                 </p>
@@ -572,43 +561,48 @@ export default function RoomLobby() {
                       state: { room, player: currentPlayer },
                     })
                   }
-                  className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 text-sm font-semibold transition hover:bg-violet-500"
+                  className="mt-4 flex w-full items-center justify-center gap-2 border border-neutral-100 bg-neutral-100 px-4 py-2.5 text-sm font-semibold text-neutral-950 transition hover:bg-neutral-300"
                 >
-                  <Shield size={17} />
+                  <Shield size={16} />
                   Assign Roles
                 </button>
               </section>
             )}
 
-            <section className="rounded-2xl border border-violet-500/20 bg-violet-600/10 p-6">
-              <Shield className="text-violet-300" size={24} />
-              <h2 className="mt-4 text-lg font-bold">Invite your crew</h2>
-              <p className="mt-2 text-sm leading-6 text-gray-400">
+            <section className="border border-neutral-800 bg-neutral-900 p-5">
+              <div className="flex items-center gap-2 text-neutral-300">
+                <Shield size={18} />
+                <h2 className="font-semibold text-neutral-100">
+                  Invite your crew
+                </h2>
+              </div>
+
+              <p className="mt-2 text-sm leading-6 text-neutral-500">
                 Send your friends this link so they can join your room.
               </p>
 
               <button
                 onClick={copyInvite}
-                className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 text-sm font-semibold transition hover:bg-violet-500"
+                className="mt-4 flex w-full items-center justify-center gap-2 border border-neutral-600 px-4 py-2.5 text-sm font-semibold text-neutral-100 transition hover:border-neutral-300 hover:bg-neutral-800"
               >
-                {copied ? <Check size={17} /> : <Copy size={17} />}
+                {copied ? <Check size={16} /> : <Copy size={16} />}
                 {copied ? "Copied!" : "Copy invite link"}
               </button>
             </section>
 
-            <div className="rounded-xl border border-white/5 px-4 py-3 text-center text-xs text-gray-500">
+            <div className="border border-neutral-800 px-4 py-2.5 text-center text-xs text-neutral-500">
               Room status: {room?.status || "LOBBY"}
               {room?.phase ? ` · ${room.phase}` : ""}
             </div>
 
             {isHost && (
-              <section className="rounded-2xl border border-red-500/20 bg-red-500/5 p-5">
+              <section className="border border-red-500/30 bg-neutral-900 p-5">
                 <div className="flex items-center gap-2 text-red-300">
-                  <Trash2 size={20} />
-                  <h2 className="font-bold">Danger zone</h2>
+                  <Trash2 size={18} />
+                  <h2 className="font-semibold">Danger zone</h2>
                 </div>
 
-                <p className="mt-2 text-sm leading-6 text-gray-400">
+                <p className="mt-2 text-sm leading-6 text-neutral-500">
                   Permanently delete this lobby. All players will lose access.
                 </p>
 
@@ -616,16 +610,16 @@ export default function RoomLobby() {
                   type="button"
                   onClick={handleDeleteLobby}
                   disabled={deleting}
-                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-300 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="mt-4 flex w-full items-center justify-center gap-2 border border-red-500/40 px-4 py-2.5 text-sm font-semibold text-red-300 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {deleting ? (
                     <>
-                      <LoaderCircle size={17} className="animate-spin" />
+                      <LoaderCircle size={16} className="animate-spin" />
                       Deleting lobby...
                     </>
                   ) : (
                     <>
-                      <Trash2 size={17} />
+                      <Trash2 size={16} />
                       Delete Lobby
                     </>
                   )}

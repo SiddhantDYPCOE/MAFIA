@@ -77,38 +77,31 @@ export default function CreateRoom() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0B0A12] px-5 py-6 text-white sm:px-10">
+    <div className="min-h-screen bg-neutral-950 px-5 py-6 text-neutral-100 sm:px-10">
       <Link
         to="/"
-        className="inline-flex items-center gap-2 text-sm text-gray-400 transition hover:text-white"
+        className="inline-flex items-center gap-2 text-sm text-neutral-400 transition hover:text-white"
       >
-        <ArrowLeft size={18} />
+        <ArrowLeft size={16} />
         Back to home
       </Link>
 
       <main className="mx-auto flex min-h-[80vh] max-w-md items-center justify-center">
-        <div className="w-full rounded-3xl border border-white/10 bg-[#15131F] p-7 shadow-2xl sm:p-9">
-          <div className="mb-7 flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-600/15 text-violet-300">
-            <Crown size={28} />
-          </div>
+        <div className="w-full border border-neutral-800 bg-neutral-900 p-7 sm:p-9">
+          <Crown size={26} className="text-neutral-300" />
 
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-violet-400">
-            Create a private room
-          </p>
+          <h1 className="mt-5 text-3xl font-bold">Gather your crew.</h1>
 
-          <h1 className="mt-3 text-3xl font-bold">
-            Gather your crew.
-          </h1>
-
-          <p className="mt-3 text-sm leading-6 text-gray-400">
-            Choose your host name to create a room and invite your friends.
+          <p className="mt-2 text-sm leading-6 text-neutral-500">
+            Choose your host name to create a private room and invite your
+            friends.
           </p>
 
           <form onSubmit={handleCreateRoom} className="mt-8 space-y-5">
             <div>
               <label
                 htmlFor="username"
-                className="mb-2 block text-sm font-medium text-gray-300"
+                className="mb-2 block text-sm font-medium text-neutral-300"
               >
                 Your username
               </label>
@@ -123,14 +116,14 @@ export default function CreateRoom() {
                 maxLength={24}
                 autoComplete="nickname"
                 required
-                className="w-full rounded-xl border border-white/10 bg-[#0B0A12] px-4 py-3.5 text-white outline-none transition placeholder:text-gray-600 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
+                className="w-full border border-neutral-700 bg-neutral-950 px-4 py-3 text-white outline-none transition placeholder:text-neutral-600 focus:border-neutral-300"
               />
             </div>
 
             {error && (
               <p
                 role="alert"
-                className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300"
+                className="border border-red-500/30 bg-red-500/5 px-4 py-3 text-sm text-red-300"
               >
                 {error}
               </p>
@@ -139,24 +132,24 @@ export default function CreateRoom() {
             <button
               type="submit"
               disabled={loading}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3.5 font-semibold transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex w-full items-center justify-center gap-2 border border-neutral-100 bg-neutral-100 px-5 py-3 font-semibold text-neutral-950 transition hover:bg-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? (
                 <>
-                  <LoaderCircle size={19} className="animate-spin" />
+                  <LoaderCircle size={18} className="animate-spin" />
                   Creating room...
                 </>
               ) : (
                 <>
-                  <Moon size={19} />
+                  <Moon size={18} />
                   Create room
                 </>
               )}
             </button>
           </form>
 
-          <div className="mt-6 flex items-center justify-center gap-2 text-xs text-gray-500">
-            <Users size={15} />
+          <div className="mt-6 flex items-center justify-center gap-2 text-xs text-neutral-500">
+            <Users size={14} />
             Invite friends with your room code.
           </div>
         </div>
@@ -164,4 +157,3 @@ export default function CreateRoom() {
     </div>
   );
 }
-

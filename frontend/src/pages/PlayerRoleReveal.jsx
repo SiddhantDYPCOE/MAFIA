@@ -125,25 +125,19 @@ export default function PlayerRoleReveal() {
     }
 
     return (
-        <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-8 text-white">
-            <section className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/80 p-8 text-center">
-                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-400">
-                    <Shield size={32} />
-                </div>
+        <main className="flex min-h-screen items-center justify-center bg-neutral-950 px-4 py-8 text-neutral-100">
+            <section className="w-full max-w-md border border-neutral-800 bg-neutral-900 p-8 text-center">
+                <Shield size={30} className="mx-auto text-neutral-300" />
 
-                <p className="mt-5 text-sm font-medium uppercase tracking-[0.25em] text-indigo-400">
-                    Mafia
-                </p>
+                <h1 className="mt-4 text-2xl font-bold">Your secret role</h1>
 
-                <h1 className="mt-2 text-2xl font-bold">Your secret role</h1>
-
-                <p className="mt-2 text-sm text-slate-400">
+                <p className="mt-2 text-sm text-neutral-500">
                     Room code: {roomCode}
                 </p>
 
-                <div className="mt-5 flex items-center justify-center gap-2 text-sm text-slate-400">
+                <div className="mt-5 flex items-center justify-center gap-2 text-sm text-neutral-400">
                     <span
-                        className={`h-2 w-2 rounded-full ${connected ? "bg-emerald-400" : "bg-amber-400"
+                        className={`h-2 w-2 ${connected ? "bg-emerald-400" : "bg-amber-400"
                             }`}
                     />
                     {connected ? "Connected to game" : "Connecting to game..."}
@@ -152,7 +146,7 @@ export default function PlayerRoleReveal() {
                 {error && (
                     <div
                         role="alert"
-                        className="mt-5 flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-left text-sm text-red-300"
+                        className="mt-5 flex items-start gap-2 border border-red-500/30 bg-red-500/5 p-3 text-left text-sm text-red-300"
                     >
                         <AlertCircle size={18} className="mt-0.5 shrink-0" />
                         {error}
@@ -161,7 +155,7 @@ export default function PlayerRoleReveal() {
 
                 {!revealed ? (
                     <>
-                        <p className="mt-6 text-sm leading-6 text-slate-400">
+                        <p className="mt-6 text-sm leading-6 text-neutral-500">
                             The god has assigned the roles. Reveal yours when you're
                             ready, and keep it secret from the other players.
                         </p>
@@ -169,7 +163,7 @@ export default function PlayerRoleReveal() {
                         <button
                             onClick={revealRole}
                             disabled={!connected || busy}
-                            className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-500 px-4 py-3 font-semibold transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="mt-7 flex w-full items-center justify-center gap-2 border border-neutral-100 bg-neutral-100 px-4 py-3 font-semibold text-neutral-950 transition hover:bg-neutral-300 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                             {busy ? (
                                 <LoaderCircle className="animate-spin" size={18} />
@@ -180,18 +174,18 @@ export default function PlayerRoleReveal() {
                         </button>
                     </>
                 ) : (
-                    <div className="mt-7 rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-6">
-                        <p className="text-sm text-indigo-300">You are</p>
+                    <div className="mt-7 border border-neutral-700 bg-neutral-950 p-6">
+                        <p className="text-sm text-neutral-400">You are</p>
                         <h2 className="mt-2 text-3xl font-bold">
                             {roleLabels[role] ?? role}
                         </h2>
-                        <p className="mt-3 text-sm text-slate-400">
+                        <p className="mt-3 text-sm text-neutral-500">
                             Status: {isAlive ? "Alive" : "Eliminated"}
                         </p>
 
                         <button
                             onClick={() => setRevealed(false)}
-                            className="mt-5 text-sm text-slate-400 underline hover:text-white"
+                            className="mt-5 text-sm text-neutral-400 underline hover:text-white"
                         >
                             Hide role on screen
                         </button>
@@ -200,7 +194,7 @@ export default function PlayerRoleReveal() {
 
                 <button
                     onClick={() => navigate(`/room/${roomCode}`)}
-                    className="mt-6 text-sm text-slate-500 hover:text-white"
+                    className="mt-6 text-sm text-neutral-500 hover:text-white"
                 >
                     Back to room
                 </button>

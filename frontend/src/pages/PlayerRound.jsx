@@ -54,26 +54,24 @@ function WinnerPanel({ result, players }) {
   );
 
   return (
-    <section className="mt-6 rounded-2xl border border-amber-400/30 bg-amber-400/5 p-6 text-center">
-      <Trophy className="mx-auto text-amber-300" size={48} />
-      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.3em] text-amber-300">
-        Game over
-      </p>
-      <h2 className="mt-3 text-3xl font-black sm:text-4xl">{title}</h2>
-      <p className="mt-3 text-slate-300">
+    <section className="mt-6 border border-amber-400/30 bg-neutral-900 p-6 text-center">
+      <Trophy className="mx-auto text-amber-300" size={40} />
+      <p className="mt-4 text-sm text-neutral-500">Game over</p>
+      <h2 className="mt-1 text-3xl font-bold sm:text-4xl">{title}</h2>
+      <p className="mt-3 text-neutral-400">
         {result?.reason ?? "The game has ended."}
       </p>
 
       {winningPlayers.length > 0 && (
         <div className="mt-6">
-          <p className="text-sm font-semibold text-slate-300">
+          <p className="text-sm font-semibold text-neutral-300">
             {winner === "MAFIA" ? "Mafia team" : "Civilian team"}
           </p>
           <div className="mt-3 flex flex-wrap justify-center gap-2">
             {winningPlayers.map((player) => (
               <span
                 key={player.id}
-                className="rounded-full border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+                className="border border-neutral-700 bg-neutral-950 px-3 py-1.5 text-sm"
               >
                 {player.username}
               </span>
@@ -82,24 +80,24 @@ function WinnerPanel({ result, players }) {
         </div>
       )}
 
-      <div className="mt-6 space-y-2 text-left">
+      <div className="mt-6 border border-neutral-800 text-left">
         {(players ?? [])
           .filter((player) => !player.isHost)
           .map((player) => (
             <div
               key={player.id}
-              className="flex items-center justify-between gap-3 rounded-lg bg-slate-950 p-3"
+              className="flex items-center justify-between gap-3 border-b border-neutral-800 bg-neutral-950 px-3 py-2.5 last:border-b-0"
             >
               <span
                 className={
                   player.isAlive
                     ? "text-white"
-                    : "text-slate-500 line-through"
+                    : "text-neutral-500 line-through"
                 }
               >
                 {player.username}
               </span>
-              <span className="text-sm text-indigo-300">
+              <span className="text-sm text-neutral-400">
                 {player.role ?? "Unknown"}
                 {!player.isAlive ? " · Eliminated" : ""}
               </span>
@@ -405,7 +403,7 @@ export default function PlayerRound() {
 
   if (!state) {
     return (
-      <main className="flex min-h-screen items-center justify-center gap-3 bg-slate-950 p-6 text-white">
+      <main className="flex min-h-screen items-center justify-center gap-3 bg-neutral-950 p-6 text-neutral-100">
         {error ? (
           <p className="text-center text-red-300">{error}</p>
         ) : (
@@ -445,12 +443,12 @@ export default function PlayerRound() {
   const showVotingResults = Boolean(votingResult);
 
   return (
-    <main className="min-h-screen bg-slate-950 px-4 py-10 text-white">
+    <main className="min-h-screen bg-neutral-950 px-4 py-10 text-neutral-100">
       <div className="mx-auto max-w-xl">
         {error && (
           <p
             role="alert"
-            className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300"
+            className="mb-4 border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-300"
           >
             {error}
           </p>
@@ -459,7 +457,7 @@ export default function PlayerRound() {
         {message && !isFinished && (
           <p
             role="status"
-            className="mb-4 flex items-start gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-300"
+            className="mb-4 flex items-start gap-2 border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-300"
           >
             <CheckCircle2 size={18} className="mt-0.5 shrink-0" />
             <span>{message}</span>
@@ -470,11 +468,11 @@ export default function PlayerRound() {
           <WinnerPanel result={state.gameResult} players={state.players} />
         ) : (
           <>
-            <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 text-center">
+            <section className="border border-neutral-800 bg-neutral-900 p-6 text-center">
               {isNight ? (
-                <Moon className="mx-auto text-indigo-400" size={32} />
+                <Moon className="mx-auto text-neutral-300" size={30} />
               ) : (
-                <Sun className="mx-auto text-amber-400" size={32} />
+                <Sun className="mx-auto text-amber-400" size={30} />
               )}
 
               <h1 className="mt-4 text-2xl font-bold">
@@ -487,37 +485,37 @@ export default function PlayerRound() {
                       : "Game"}
               </h1>
 
-              <p className="mt-2 text-sm text-slate-400">
+              <p className="mt-2 text-sm text-neutral-500">
                 Room {roomCode}
               </p>
 
               {myRole && (
-                <p className="mt-3 text-sm text-indigo-300">
+                <p className="mt-3 text-sm text-neutral-300">
                   Your role: {myRole}
                 </p>
               )}
 
               {isNight && !canChooseTarget && (
-                <p className="mt-4 text-sm text-slate-400">
+                <p className="mt-4 text-sm text-neutral-500">
                   Stay quiet and wait for your turn.
                 </p>
               )}
 
               {isDiscussion && (
-                <p className="mt-4 text-sm leading-relaxed text-slate-300">
+                <p className="mt-4 text-sm leading-relaxed text-neutral-400">
                   Discuss your suspicions and wait for God to start voting.
                 </p>
               )}
 
               {isVoting && !showVotingResults && (
-                <section className="mt-6 rounded-2xl border border-indigo-500/30 bg-slate-900/80 p-6">
+                <section className="mt-6 border border-neutral-700 bg-neutral-950 p-6 text-left">
                   <h2 className="text-xl font-semibold">Cast your vote</h2>
-                  <p className="mt-2 text-sm text-slate-400">
+                  <p className="mt-2 text-sm text-neutral-500">
                     Votes are private. No counts are shown until God ends voting.
                   </p>
 
                   {votingPrivate?.hasVoted ? (
-                    <div className="mt-5 rounded-xl bg-emerald-500/10 p-4 text-emerald-300">
+                    <div className="mt-5 border border-emerald-500/30 bg-emerald-500/5 p-4 text-emerald-300">
                       Vote submitted. Waiting for God to end voting.
                     </div>
                   ) : votingStatus !== "OPEN" ? (
@@ -547,14 +545,14 @@ export default function PlayerRound() {
                               }}
                               disabled={voteSubmitting}
                               aria-pressed={selected}
-                              className={`flex w-full items-center justify-between rounded-xl border p-4 text-left ${
+                              className={`flex w-full items-center justify-between border p-4 text-left transition ${
                                 selected
-                                  ? "border-indigo-400 bg-indigo-500/15"
-                                  : "border-slate-700 bg-slate-950"
+                                  ? "border-neutral-100 bg-neutral-800"
+                                  : "border-neutral-800 bg-neutral-900 hover:border-neutral-600"
                               } disabled:opacity-60`}
                             >
                               <span>{player.username}</span>
-                              <span className="text-sm text-indigo-300">
+                              <span className="text-sm text-neutral-400">
                                 {selected ? "Selected" : "Select"}
                               </span>
                             </button>
@@ -570,7 +568,7 @@ export default function PlayerRound() {
                           voteSubmitting ||
                           !socket?.connected
                         }
-                        className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-500 px-5 py-3 font-semibold disabled:opacity-50"
+                        className="mt-5 flex w-full items-center justify-center gap-2 border border-neutral-100 bg-neutral-100 px-5 py-3 font-semibold text-neutral-950 transition hover:bg-neutral-300 disabled:opacity-50"
                       >
                         {voteSubmitting && (
                           <LoaderCircle size={18} className="animate-spin" />
@@ -583,7 +581,7 @@ export default function PlayerRound() {
               )}
 
               {isVoting && showVotingResults && (
-                <section className="mt-6 rounded-2xl border border-slate-700 bg-slate-900/80 p-6">
+                <section className="mt-6 border border-neutral-700 bg-neutral-950 p-6 text-left">
                   <h2 className="text-xl font-semibold">
                     {votingResult.outcome === "TIE"
                       ? "The vote is tied"
@@ -593,17 +591,17 @@ export default function PlayerRound() {
                           ? "Game finished"
                           : "Voting results"}
                   </h2>
-                  <p className="mt-2 text-sm text-slate-400">
+                  <p className="mt-2 text-sm text-neutral-500">
                     Final vote counts. Individual votes remain private.
                   </p>
-                  <div className="mt-4 space-y-2">
+                  <div className="mt-4 border border-neutral-800">
                     {(votingResult.counts ?? []).map((candidate) => (
                       <div
                         key={candidate.playerId}
-                        className="flex justify-between rounded-lg bg-slate-950 p-3"
+                        className="flex justify-between border-b border-neutral-800 bg-neutral-900 px-3 py-2.5 last:border-b-0"
                       >
                         <span>{candidate.username}</span>
-                        <span className="font-semibold text-indigo-300">
+                        <span className="font-semibold text-neutral-300">
                           {candidate.count} vote
                           {candidate.count === 1 ? "" : "s"}
                         </span>
@@ -620,26 +618,26 @@ export default function PlayerRound() {
             </section>
 
             {canChooseTarget && (
-              <section className="mt-6 rounded-2xl border border-indigo-500/30 bg-slate-900/80 p-6">
+              <section className="mt-6 border border-neutral-800 bg-neutral-900 p-6">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-500/10">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-neutral-700 text-neutral-300">
                     {myRole === "POLICE" ? (
-                      <Search className="text-indigo-400" size={23} />
+                      <Search size={20} />
                     ) : myRole === "DOCTOR" ? (
-                      <Shield className="text-indigo-400" size={23} />
+                      <Shield size={20} />
                     ) : (
-                      <Target className="text-indigo-400" size={23} />
+                      <Target size={20} />
                     )}
                   </div>
                   <div>
                     <h2 className="font-semibold">{action.title}</h2>
-                    <p className="mt-1 text-sm text-slate-400">
+                    <p className="mt-1 text-sm text-neutral-500">
                       {action.description}
                     </p>
                   </div>
                 </div>
 
-                <div className="mt-5 space-y-3">
+                <div className="mt-5 space-y-2">
                   {alivePlayers.map((player) => {
                     const selected = selectedTarget === player.id;
 
@@ -654,14 +652,14 @@ export default function PlayerRound() {
                         }}
                         disabled={submitting}
                         aria-pressed={selected}
-                        className={`flex w-full items-center justify-between rounded-xl border p-4 text-left ${
+                        className={`flex w-full items-center justify-between border p-4 text-left transition ${
                           selected
-                            ? "border-indigo-400 bg-indigo-500/15"
-                            : "border-slate-700 bg-slate-950"
+                            ? "border-neutral-100 bg-neutral-800"
+                            : "border-neutral-800 bg-neutral-950 hover:border-neutral-600"
                         } disabled:opacity-60`}
                       >
                         <span>{player.username}</span>
-                        <span className="text-sm text-indigo-300">
+                        <span className="text-sm text-neutral-400">
                           {selected ? "Selected" : "Select"}
                         </span>
                       </button>
@@ -670,7 +668,7 @@ export default function PlayerRound() {
                 </div>
 
                 {myRole === "DOCTOR" && (
-                  <p className="mt-3 text-xs text-slate-400">
+                  <p className="mt-3 text-xs text-neutral-500">
                     You may select your own name to self-save.
                   </p>
                 )}
@@ -684,7 +682,7 @@ export default function PlayerRound() {
                     !selectedTarget ||
                     !canChooseTarget
                   }
-                  className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-500 px-4 py-3 font-semibold disabled:opacity-50"
+                  className="mt-5 flex w-full items-center justify-center gap-2 border border-neutral-100 bg-neutral-100 px-4 py-3 font-semibold text-neutral-950 transition hover:bg-neutral-300 disabled:opacity-50"
                 >
                   {submitting && (
                     <LoaderCircle className="animate-spin" size={18} />
@@ -695,9 +693,9 @@ export default function PlayerRound() {
             )}
 
             {myRole === "POLICE" && lastInvestigation && (
-              <section className="mt-6 rounded-2xl border border-indigo-500/30 bg-slate-900/80 p-5">
+              <section className="mt-6 border border-neutral-800 bg-neutral-900 p-5">
                 <h2 className="flex items-center gap-2 font-semibold">
-                  <Search size={19} className="text-indigo-400" />
+                  <Search size={18} className="text-neutral-300" />
                   Latest investigation
                 </h2>
                 <p
@@ -711,7 +709,7 @@ export default function PlayerRound() {
                     ? "Your investigation indicates this player is Mafia."
                     : "Your investigation indicates this player is not Mafia."}
                 </p>
-                <p className="mt-2 text-xs text-slate-500">
+                <p className="mt-2 text-xs text-neutral-500">
                   This information is private to you.
                 </p>
               </section>
@@ -719,28 +717,28 @@ export default function PlayerRound() {
           </>
         )}
 
-        <section className="mt-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
-          <h2 className="flex items-center gap-2 font-semibold">
-            <Shield className="text-indigo-400" size={20} />
+        <section className="mt-6 border border-neutral-800 bg-neutral-900">
+          <h2 className="flex items-center gap-2 border-b border-neutral-800 px-5 py-4 font-semibold">
+            <Shield className="text-neutral-400" size={18} />
             Players
           </h2>
-          <div className="mt-4 space-y-2">
+          <div>
             {(state.players ?? []).map((player) => (
               <div
                 key={player.id}
-                className="flex items-center justify-between gap-3 rounded-lg bg-slate-950 p-3"
+                className="flex items-center justify-between gap-3 border-b border-neutral-800 px-5 py-3 last:border-b-0"
               >
                 <span
                   className={
                     player.isAlive
-                      ? "text-slate-100"
-                      : "text-slate-500 line-through"
+                      ? "text-neutral-100"
+                      : "text-neutral-500 line-through"
                   }
                 >
                   {player.username}
                   {player.isHost ? " (God)" : ""}
                 </span>
-                <span className="text-xs text-slate-400">
+                <span className="text-xs text-neutral-500">
                   {isFinished && !player.isHost && player.role
                     ? player.role
                     : !player.isAlive
@@ -756,22 +754,22 @@ export default function PlayerRound() {
       </div>
 
       {nightResult && !isFinished && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/95 px-6 text-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/95 px-6 text-center">
           <div className="max-w-lg">
             {nightResult.eliminatedUsername ? (
-              <Moon className="mx-auto text-rose-400" size={42} />
+              <Moon className="mx-auto text-red-400" size={40} />
             ) : (
-              <Shield className="mx-auto text-emerald-400" size={42} />
+              <Shield className="mx-auto text-emerald-400" size={40} />
             )}
-            <p className="mt-6 text-sm uppercase tracking-[0.3em] text-indigo-400">
+            <p className="mt-6 text-sm text-neutral-500">
               Morning has arrived
             </p>
-            <h2 className="mt-5 text-3xl font-bold sm:text-5xl">
+            <h2 className="mt-3 text-3xl font-bold sm:text-5xl">
               {nightResult.eliminatedUsername
                 ? nightResult.eliminatedUsername
                 : "Nobody was eliminated"}
             </h2>
-            <p className="mt-5 text-slate-300">
+            <p className="mt-5 text-neutral-400">
               {nightResult.eliminatedUsername
                 ? "Didn't make it to breakfast. Their secrets stay buried... for now."
                 : "The Doctor saved the target. Everyone lives to argue another day."}
