@@ -1,7 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// This is your Prisma schema file.
+// Learn more: https://pris.ly/d/prisma-schema
 
 generator client {
   provider = "prisma-client-js"
@@ -34,12 +32,25 @@ enum GamePhase {
   FINISHED
 }
 
+enum NightStep {
+  ALL_SLEEP
+  MAFIA_WAKE
+  MAFIA_CHOOSE
+  DOCTOR_WAKE
+  DOCTOR_CHOOSE
+  POLICE_WAKE
+  POLICE_CHOOSE
+  NIGHT_END
+}
+
 model GameRoom {
   id                 String     @id @default(cuid())
   code               String     @unique
   status             RoomStatus @default(LOBBY)
   phase              GamePhase  @default(LOBBY)
   currentRoundNumber Int        @default(0)
+  nightStep          NightStep?
+  nightState         Json?
   hostPlayerId       String?
 
   players Player[]
@@ -49,6 +60,7 @@ model GameRoom {
   updatedAt DateTime @updatedAt
 
   @@index([status])
+  @@index([phase])
 }
 
 model Player {
@@ -68,6 +80,7 @@ model Player {
   @@unique([roomId, username])
   @@index([roomId, isConnected])
   @@index([roomId, role])
+  @@index([roomId, isAlive])
 }
 
 model GameRound {

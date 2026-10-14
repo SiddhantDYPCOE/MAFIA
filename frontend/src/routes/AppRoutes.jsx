@@ -5,6 +5,10 @@ import CreateRoom from "../pages/CreateRoom";
 import JoinRoom from "../pages/JoinRoom";
 import RoomLobby from "../pages/RoomLobby";
 import DeletedLobby from "../pages/DeletedLobby";
+import PlayerRoleReveal from "../pages/PlayerRoleReveal";
+import GodRoleAssign from "../pages/GodRoleAssign";
+import GodNightControl from "../pages/GodNightControl";
+import PlayerRound from "../pages/PlayerRound";
 
 
 export default function AppRoutes() {
@@ -16,6 +20,24 @@ export default function AppRoutes() {
         <Route path="/join-room" element={<JoinRoom />} />
         <Route path="/room/:roomCode" element={<RoomLobby />} />
         <Route path="/deleted" element={<DeletedLobby />} />
+        <Route
+  path="/room/:roomCode/roles"
+  element={<GodRoleAssign />}
+/>
+        <Route
+  path="/room/:roomCode/reveal"
+  element={<PlayerRoleReveal />}
+/>
+
+<Route
+  path="/room/:roomCode/god"
+  element={<GodNightControl />}
+/>
+
+<Route
+  path="/room/:roomCode/round"
+  element={<PlayerRound />}
+/>
 
         <Route
           path="*"

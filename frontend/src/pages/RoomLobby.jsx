@@ -1,5 +1,5 @@
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Link,
   useLocation,
@@ -18,11 +18,11 @@ import {
   Users,
   Wifi,
   WifiOff,
+  Swords,
 } from "lucide-react";
+
 import { connectPlayerSocket } from "../services/socket";
 import { deleteRoom, getRoom } from "../services/room.api";
-
-
 
 export default function RoomLobby() {
   const { roomCode: routeRoomCode } = useParams();
@@ -36,7 +36,7 @@ export default function RoomLobby() {
 
   const [room, setRoom] = useState(location.state?.room ?? null);
   const [currentPlayer, setCurrentPlayer] = useState(
-    location.state?.player ?? null
+    location.state?.player ?? null,
   );
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(!location.state?.room);
@@ -44,9 +44,55 @@ export default function RoomLobby() {
   const [error, setError] = useState("");
   const [socketStatus, setSocketStatus] = useState("connecting");
 
+  const players = room?.players ?? [];
+  const host = players.find((player) => player.isHost);
+  const isHost = Boolean(currentPlayer?.isHost);
+  const gameStarted = room?.phase === "ROLE_ASSIGNMENT" ||
+    room?.phase === "NIGHT" ||
+    room?.phase === "DISCUSSION" ||
+    room?.phase === "VOTING" ||
+    room?.phase === "ELIMINATION" ||
+    room?.phase === "FINISHED" ||
+    room?.status === "PLAYING" ||
+    room?.status === "FINISHED";
+
+  const updateRoom = useCallback(
+    (updatedRoom, playerId) => {
+      if (!updatedRoom) return;
+
+      if (updatedRoom.code?.toUpperCase() !== roomCode) return;
+
+      setRoom(updatedRoom);
+
+      const updatedPlayer = updatedRoom.players?.find(
+        (player) => player.id === playerId,
+      );
+
+      if (updatedPlayer) {
+        setCurrentPlayer(updatedPlayer);
+      }
+    },
+    [roomCode],
+  );
+
   useEffect(() => {
     let cancelled = false;
     let socket;
+
+    const handleRoomState = (updatedRoom) => {
+      if (cancelled) return;
+
+      let session;
+
+      try {
+        const raw = localStorage.getItem(sessionKey);
+        session = raw ? JSON.parse(raw) : null;
+      } catch {
+        session = null;
+      }
+
+      updateRoom(updatedRoom, session?.playerId);
+    };
 
     async function initializeLobby() {
       try {
@@ -57,7 +103,6 @@ export default function RoomLobby() {
           throw new Error("Invalid room code.");
         }
 
-        // Fetch the initial room state through the room service.
         const fetchedRoom = await getRoom(roomCode);
 
         if (!fetchedRoom) {
@@ -66,9 +111,6 @@ export default function RoomLobby() {
 
         if (cancelled) return;
 
-        setRoom(fetchedRoom);
-
-        // Read the session created by CreateRoom or JoinRoom.
         let session;
 
         try {
@@ -78,38 +120,74 @@ export default function RoomLobby() {
           session = null;
         }
 
-        if (!session?.playerId || !session?.reconnectSecret) {
-          setSocketStatus("disconnected");
-          setError(
-            "Your saved player session was not found. Please rejoin this room."
+        const isCurrentHost =
+          fetchedRoom.hostPlayerId === session.playerId ||
+          fetchedRoom.players?.some(
+            (player) => player.id === session.playerId && player.isHost,
+          );
+
+        if (fetchedRoom.phase === "NIGHT") {
+          navigate(
+            isCurrentHost
+              ? `/room/${roomCode}/god`
+              : `/room/${roomCode}/round`,
+            { replace: true },
           );
           return;
         }
 
-        const matchedPlayer = fetchedRoom.players?.find(
-          (player) => player.id === session.playerId
-        );
-
-        if (matchedPlayer) {
-          setCurrentPlayer(matchedPlayer);
+        if (
+          ["DISCUSSION", "VOTING", "ELIMINATION", "FINISHED"].includes(
+            fetchedRoom.phase,
+          )
+        ) {
+          navigate(
+            isCurrentHost
+              ? `/room/${roomCode}/god`
+              : `/room/${roomCode}/round`,
+            { replace: true },
+          );
+          return;
         }
 
-        // Create the authenticated Socket.IO connection.
+        // ROLE_ASSIGNMENT must remain on the role reveal screen.
+        if (fetchedRoom.phase === "ROLE_ASSIGNMENT") {
+          navigate(
+            isCurrentHost
+              ? `/room/${roomCode}/roles`
+              : `/room/${roomCode}/reveal`,
+            { replace: true },
+          );
+          return;
+        }
+
+        if (
+          ["DISCUSSION", "VOTING", "ELIMINATION", "FINISHED"].includes(
+            fetchedRoom.phase,
+          ) ||
+          fetchedRoom.status === "PLAYING" ||
+          fetchedRoom.status === "FINISHED"
+        ) {
+          navigate(
+            fetchedRoom.hostPlayerId === session.playerId
+              ? `/room/${roomCode}/god`
+              : `/room/${roomCode}/round`,
+            { replace: true },
+          );
+          return;
+        }
+
         socket = connectPlayerSocket(session);
         socketRef.current = socket;
 
-        socket.on("connect", () => {
-          console.log("Socket connected:", socket.id);
-
+        const handleConnect = () => {
           if (cancelled) return;
-
           setSocketStatus("connected");
           setError("");
-        });
+        };
 
-        // The backend emits this after restoring the session.
-        socket.on("session:restored", (data) => {
-          console.log("Session restored:", data);
+        const handleSessionRestored = (data) => {
+          if (cancelled) return;
 
           if (
             data?.roomCode?.toUpperCase() !== roomCode ||
@@ -118,69 +196,86 @@ export default function RoomLobby() {
             return;
           }
 
-          if (!cancelled) {
-            setSocketStatus("connected");
-          }
-        });
+          setSocketStatus("connected");
+          setError("");
+        };
 
-        // Receive live room and player updates.
-        socket.on("room:state", (updatedRoom) => {
-          if (cancelled || !updatedRoom) return;
-
-          if (updatedRoom.code?.toUpperCase() !== roomCode) return;
-
-          setRoom(updatedRoom);
-
-          const updatedPlayer = updatedRoom.players?.find(
-            (player) => player.id === session.playerId
-          );
-
-          if (updatedPlayer) {
-            setCurrentPlayer(updatedPlayer);
-          }
-        });
-
-        // Handle a room deleted by the host.
-        socket.on("room:closed", (data) => {
+        const handleRolesAssigned = (data) => {
           if (cancelled) return;
 
-          setError(
-            data?.message || "This lobby has been closed by the host."
+          if (data?.roomCode?.toUpperCase() !== roomCode) return;
+
+          const player = fetchedRoom.players?.find(
+            (item) => item.id === session.playerId,
           );
 
-          localStorage.removeItem(sessionKey);
+          if (player?.isHost) return;
 
-          socket.disconnect();
-          navigate("/", { replace: true });
-        });
+          navigate(`/room/${roomCode}/reveal`, { replace: true });
+        };
 
-        socket.on("disconnect", () => {
-          if (!cancelled) {
-            setSocketStatus("disconnected");
-          }
-        });
+        const handleGameStarted = (data) => {
+          if (cancelled) return;
 
-        socket.on("connect_error", (err) => {
+          if (data?.roomCode?.toUpperCase() !== roomCode) return;
+
+          const player = fetchedRoom.players?.find(
+            (item) => item.id === session.playerId,
+          );
+
+          if (player?.isHost) return;
+
+          navigate(`/room/${roomCode}/reveal`, { replace: true });
+        };
+
+        const handleNightPhaseChanged = (data) => {
+          if (cancelled || !data) return;
+
+          if (data.phase !== "NIGHT") return;
+
+          const player = fetchedRoom.players?.find(
+            (item) => item.id === session.playerId,
+          );
+
+          navigate(
+            player?.isHost
+              ? `/room/${roomCode}/god`
+              : `/room/${roomCode}/round`,
+            { replace: true },
+          );
+        };
+        const handleDisconnect = () => {
+          if (!cancelled) setSocketStatus("disconnected");
+        };
+
+        const handleConnectError = (err) => {
           if (cancelled) return;
 
           setSocketStatus("disconnected");
           setError(err.message || "Unable to connect to the live lobby.");
-        });
+        };
+
+        socket.on("connect", handleConnect);
+        socket.on("session:restored", handleSessionRestored);
+        socket.on("room:state", handleRoomState);
+        socket.on("game:roles:assigned", handleRolesAssigned);
+        socket.on("game:started", handleGameStarted);
+        socket.on("game:night:phase-changed", handleNightPhaseChanged);
+        socket.on("disconnect", handleDisconnect);
+        socket.on("connect_error", handleConnectError);
 
         socket.connect();
       } catch (err) {
         if (!cancelled) {
           setError(
             err.response?.data?.message ||
-              err.message ||
-              "Unable to load this room."
+            err.message ||
+            "Unable to load this room.",
           );
           setSocketStatus("disconnected");
         }
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     }
 
@@ -198,7 +293,7 @@ export default function RoomLobby() {
         socketRef.current = null;
       }
     };
-  }, [roomCode, sessionKey, navigate]);
+  }, [roomCode, sessionKey, navigate, updateRoom]);
 
   const copyInvite = async () => {
     const inviteUrl = `${window.location.origin}/room/${roomCode}`;
@@ -206,20 +301,19 @@ export default function RoomLobby() {
     try {
       await navigator.clipboard.writeText(inviteUrl);
       setCopied(true);
-
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
       setError(
-        "Could not copy the invite link. Please copy the URL manually."
+        "Could not copy the invite link. Please copy the URL manually.",
       );
     }
   };
 
   const handleDeleteLobby = async () => {
-    if (!currentPlayer?.isHost || deleting) return;
+    if (!isHost || deleting) return;
 
     const confirmed = window.confirm(
-      "Delete this lobby permanently? All players will lose access to this room."
+      "Delete this lobby permanently? All players will lose access to this room.",
     );
 
     if (!confirmed) return;
@@ -233,8 +327,7 @@ export default function RoomLobby() {
 
       await deleteRoom(roomCode, session);
 
-      // Remove the local session and close this client's socket.
-      sessionStorage.removeItem(sessionKey);
+      localStorage.removeItem(sessionKey);
 
       socketRef.current?.removeAllListeners();
       socketRef.current?.disconnect();
@@ -244,8 +337,8 @@ export default function RoomLobby() {
     } catch (err) {
       setError(
         err.response?.data?.message ||
-          err.message ||
-          "Unable to delete the lobby."
+        err.message ||
+        "Unable to delete the lobby.",
       );
     } finally {
       setDeleting(false);
@@ -266,11 +359,7 @@ export default function RoomLobby() {
       <div className="flex min-h-screen items-center justify-center bg-[#0B0A12] px-5 text-white">
         <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#15131F] p-7 text-center">
           <Shield className="mx-auto text-red-400" size={36} />
-
-          <h1 className="mt-4 text-2xl font-bold">
-            Unable to open room
-          </h1>
-
+          <h1 className="mt-4 text-2xl font-bold">Unable to open room</h1>
           <p className="mt-3 text-sm text-gray-400">{error}</p>
 
           <button
@@ -283,9 +372,6 @@ export default function RoomLobby() {
       </div>
     );
   }
-
-  const players = room?.players ?? [];
-  const host = players.find((player) => player.isHost);
 
   return (
     <div className="min-h-screen bg-[#0B0A12] px-5 py-6 text-white sm:px-10">
@@ -308,24 +394,21 @@ export default function RoomLobby() {
         <div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-end">
           <div>
             <div
-              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${
-                socketStatus === "connected"
+              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${socketStatus === "connected"
                   ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
                   : socketStatus === "disconnected"
                     ? "border-red-500/20 bg-red-500/10 text-red-300"
                     : "border-amber-500/20 bg-amber-500/10 text-amber-300"
-              }`}
+                }`}
             >
               <span
-                className={`h-2 w-2 rounded-full ${
-                  socketStatus === "connected"
+                className={`h-2 w-2 rounded-full ${socketStatus === "connected"
                     ? "bg-emerald-400"
                     : socketStatus === "disconnected"
                       ? "bg-red-400"
                       : "bg-amber-400"
-                }`}
+                  }`}
               />
-
               {socketStatus === "connected"
                 ? "Live lobby"
                 : socketStatus === "disconnected"
@@ -383,7 +466,6 @@ export default function RoomLobby() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold">Players</h2>
-
                 <p className="mt-1 text-sm text-gray-500">
                   Players currently in this room
                 </p>
@@ -431,18 +513,16 @@ export default function RoomLobby() {
                   </div>
 
                   <div
-                    className={`flex shrink-0 items-center gap-1.5 text-xs ${
-                      player.isConnected
+                    className={`flex shrink-0 items-center gap-1.5 text-xs ${player.isConnected
                         ? "text-emerald-400"
                         : "text-gray-500"
-                    }`}
+                      }`}
                   >
                     {player.isConnected ? (
                       <Wifi size={15} />
                     ) : (
                       <WifiOff size={15} />
                     )}
-
                     {player.isConnected ? "Online" : "Offline"}
                   </div>
                 </div>
@@ -463,21 +543,46 @@ export default function RoomLobby() {
               </div>
 
               <h2 className="mt-4 text-lg font-bold">Your host</h2>
-
               <p className="mt-2 text-sm text-gray-400">
                 {host?.username || "Waiting for host"}
               </p>
 
               <p className="mt-4 text-sm leading-6 text-gray-500">
-                The host will assign roles and control when each round begins.
+                The host assigns roles and controls the game.
               </p>
             </section>
 
+            {isHost && !gameStarted && (
+              <section className="rounded-2xl border border-violet-500/20 bg-violet-600/10 p-6">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-500/15 text-violet-300">
+                  <Swords size={22} />
+                </div>
+
+                <h2 className="mt-4 text-lg font-bold">
+                  Ready to set the roles?
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-gray-400">
+                  Configure Mafia, Doctor, Police, and Civilian roles before
+                  the game starts.
+                </p>
+
+                <button
+                  onClick={() =>
+                    navigate(`/room/${roomCode}/roles`, {
+                      state: { room, player: currentPlayer },
+                    })
+                  }
+                  className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 text-sm font-semibold transition hover:bg-violet-500"
+                >
+                  <Shield size={17} />
+                  Assign Roles
+                </button>
+              </section>
+            )}
+
             <section className="rounded-2xl border border-violet-500/20 bg-violet-600/10 p-6">
               <Shield className="text-violet-300" size={24} />
-
               <h2 className="mt-4 text-lg font-bold">Invite your crew</h2>
-
               <p className="mt-2 text-sm leading-6 text-gray-400">
                 Send your friends this link so they can join your room.
               </p>
@@ -493,9 +598,10 @@ export default function RoomLobby() {
 
             <div className="rounded-xl border border-white/5 px-4 py-3 text-center text-xs text-gray-500">
               Room status: {room?.status || "LOBBY"}
+              {room?.phase ? ` · ${room.phase}` : ""}
             </div>
 
-            {currentPlayer?.isHost && (
+            {isHost && (
               <section className="rounded-2xl border border-red-500/20 bg-red-500/5 p-5">
                 <div className="flex items-center gap-2 text-red-300">
                   <Trash2 size={20} />
@@ -503,8 +609,7 @@ export default function RoomLobby() {
                 </div>
 
                 <p className="mt-2 text-sm leading-6 text-gray-400">
-                  Permanently delete this lobby when you no longer need it.
-                  All players will lose access.
+                  Permanently delete this lobby. All players will lose access.
                 </p>
 
                 <button
