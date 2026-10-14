@@ -2,7 +2,7 @@ import { io } from "socket.io-client";
 
 const SOCKET_URL =
   import.meta.env.VITE_SOCKET_URL ||
-  "https://mafia-jdx6.onrender.com";
+  "https://mafia-tf4m.onrender.com";
 
 export function connectPlayerSocket(session) {
   if (
