@@ -5,14 +5,15 @@ export async function socketAuth(socket, next) {
   try {
     const auth = socket.handshake.auth ?? {};
 
-    // Allow unauthenticated sockets to connect only so they can
-    // request a new seat through room:join.
+    // Allow unauthenticated connections for room:join.
     if (
       !auth.roomCode &&
       !auth.playerId &&
       !auth.reconnectSecret
     ) {
       socket.data.authenticated = false;
+      socket.data.isHost = false;
+
       return next();
     }
 
@@ -32,6 +33,9 @@ export async function socketAuth(socket, next) {
 
     socket.data.authenticated = true;
     socket.data.session = session;
+
+    // Determine host privileges from the authenticated database session.
+    socket.data.isHost = session.isHost === true;
 
     next();
   } catch {
