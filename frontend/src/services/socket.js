@@ -1,7 +1,7 @@
 import { io } from "socket.io-client";
 
 const SOCKET_URL =
-import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
+import.meta.env.VITE_SOCKET_URL || "https://mafia-jdx6.onrender.com" ||"http://localhost:5000";
 
 export function connectPlayerSocket(session) {
 if (
