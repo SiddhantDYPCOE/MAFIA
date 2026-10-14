@@ -55,6 +55,7 @@ model GameRoom {
 
   players Player[]
   rounds  GameRound[]
+  votes Vote[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -74,6 +75,9 @@ model Player {
   isAlive             Boolean     @default(true)
   joinedAt            DateTime    @default(now())
   lastSeenAt          DateTime    @default(now())
+
+  votesCast     Vote[] @relation("VotesCast")
+  votesReceived Vote[] @relation("VotesReceived")
 
   room GameRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
@@ -97,4 +101,22 @@ model GameRound {
 
   @@unique([roomId, roundNumber])
   @@index([roomId, phase])
+}
+
+model Vote {
+  id          String   @id @default(cuid())
+  roomId      String
+  roundNumber Int
+  attempt     Int      @default(1)
+  voterId     String
+  targetId    String
+  createdAt   DateTime @default(now())
+
+  room   GameRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  voter  Player   @relation("VotesCast", fields: [voterId], references: [id], onDelete: Cascade)
+  target Player   @relation("VotesReceived", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, roundNumber, attempt, voterId])
+  @@index([roomId, roundNumber, attempt])
+  @@index([targetId])
 }

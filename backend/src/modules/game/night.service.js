@@ -1,4 +1,3 @@
-
 import { gameRepository } from "./game.repository.js";
 
 const INITIAL_NIGHT_STATE = {
@@ -9,6 +8,8 @@ const INITIAL_NIGHT_STATE = {
   policeSelection: null,
   policeCheck: null,
 };
+
+const ALLOW_DOCTOR_SELF_SAVE = true;
 
 const ORDER = [
   "ALL_SLEEP",
@@ -45,8 +46,6 @@ const CHOOSE_CONFIG = {
   },
 };
 
-const ALLOW_DOCTOR_SELF_SAVE = false;
-
 function getNightState(value) {
   return {
     ...INITIAL_NIGHT_STATE,
@@ -73,8 +72,8 @@ function getNextStep(room, currentStep) {
 
   while (index < ORDER.length - 1) {
     index += 1;
-    const candidate = ORDER[index];
 
+    const candidate = ORDER[index];
     const role = Object.keys(ROLE_STEPS).find((key) =>
       ROLE_STEPS[key].includes(candidate),
     );
@@ -85,16 +84,6 @@ function getNextStep(room, currentStep) {
   }
 
   return "NIGHT_END";
-}
-
-function requireHost(socket) {
-  if (
-    !socket.data.authenticated ||
-    !socket.data.session ||
-    socket.data.isHost !== true
-  ) {
-    throw new Error("Only God can control the night.");
-  }
 }
 
 function requireLivingRole(room, playerId, role) {
@@ -108,7 +97,9 @@ function requireLivingRole(room, playerId, role) {
     !player.isAlive ||
     player.role !== role
   ) {
-    throw new Error(`Only living ${role.toLowerCase()} players can do this.`);
+    throw new Error(
+      `Only living ${role.toLowerCase()} players can do this.`,
+    );
   }
 
   return player;
@@ -130,21 +121,21 @@ function validateTarget(room, targetId, actingRole) {
     throw new Error("Target must be a living player.");
   }
 
-  if (
-    actingRole === "MAFIA" &&
-    target.role === "MAFIA"
-  ) {
+  if (actingRole === "MAFIA" && target.role === "MAFIA") {
     throw new Error("Mafia cannot target another Mafia player.");
   }
 
-  if (
-    actingRole === "DOCTOR" &&
-    !ALLOW_DOCTOR_SELF_SAVE &&
-    target.id === room.players.find(
-      (player) => player.role === "DOCTOR" && player.isAlive,
-    )?.id
-  ) {
-    throw new Error("Doctor self-save is disabled.");
+  if (actingRole === "DOCTOR" && !ALLOW_DOCTOR_SELF_SAVE) {
+    const doctor = room.players.find(
+      (player) =>
+        !player.isHost &&
+        player.isAlive &&
+        player.role === "DOCTOR",
+    );
+
+    if (doctor?.id === target.id) {
+      throw new Error("Doctor self-save is disabled.");
+    }
   }
 
   return target;
@@ -155,7 +146,7 @@ async function getNightRoom(roomCode) {
 
   if (!room) throw new Error("Room not found.");
 
-  if (room.phase !== "NIGHT") {
+  if (room.status !== "PLAYING" || room.phase !== "NIGHT") {
     throw new Error("The room is not in the night phase.");
   }
 
@@ -166,18 +157,22 @@ export const nightService = {
   async startNight(roomCode) {
     const room = await gameRepository.findNightRoom(roomCode);
 
-    if (!room) throw new Error("Room not found.");
+    if (!room) {
+      throw new Error("Room not found.");
+    }
 
-   if (
-  room.status !== "PLAYING" ||
-  room.phase !== "ROLE_ASSIGNMENT"
-) {
-  throw new Error(
-    "Night 1 can only start after the host starts the game and players reveal their roles."
-  );
-}
+    if (
+      room.status !== "PLAYING" ||
+      room.phase !== "ROLE_ASSIGNMENT"
+    ) {
+      throw new Error(
+        "Night 1 can only start after role assignment.",
+      );
+    }
 
-    const players = room.players.filter((player) => !player.isHost);
+    const players = room.players.filter(
+      (player) => !player.isHost,
+    );
 
     if (players.length < 4) {
       throw new Error("At least 4 playing participants are required.");
@@ -187,16 +182,22 @@ export const nightService = {
       throw new Error("Assign roles to every player before starting.");
     }
 
-    const result = await gameRepository.startNight(room.id, "ROLE_ASSIGNMENT", {
-      status: "PLAYING",
-      phase: "NIGHT",
-      currentRoundNumber: 1,
-      nightStep: "ALL_SLEEP",
-      nightState: INITIAL_NIGHT_STATE,
-    });
+    const result = await gameRepository.startNight(
+      room.id,
+      "ROLE_ASSIGNMENT",
+      {
+        status: "PLAYING",
+        phase: "NIGHT",
+        currentRoundNumber: 1,
+        nightStep: "ALL_SLEEP",
+        nightState: INITIAL_NIGHT_STATE,
+      },
+    );
 
     if (result.count !== 1) {
-      throw new Error("The game has already started. Refresh and try again.");
+      throw new Error(
+        "The game has already started. Refresh and try again.",
+      );
     }
 
     return {
@@ -212,7 +213,9 @@ export const nightService = {
     const config = CHOOSE_CONFIG[step];
 
     if (!config) {
-      throw new Error("Target selection is not available at this step.");
+      throw new Error(
+        "Target selection is not available at this step.",
+      );
     }
 
     requireLivingRole(room, playerId, config.role);
@@ -235,7 +238,9 @@ export const nightService = {
     );
 
     if (result.count !== 1) {
-      throw new Error("The night step changed. Refresh your screen.");
+      throw new Error(
+        "The night step changed. Refresh your screen.",
+      );
     }
 
     return {
@@ -252,7 +257,9 @@ export const nightService = {
     const room = await getNightRoom(roomCode);
 
     if (room.nightStep !== expectedStep) {
-      throw new Error("The night step has changed. Refresh and try again.");
+      throw new Error(
+        "The night step has changed. Refresh and try again.",
+      );
     }
 
     const state = getNightState(room.nightState);
@@ -264,7 +271,7 @@ export const nightService = {
       if (!targetId) {
         if (expectedStep === "MAFIA_CHOOSE") {
           const selections = Object.values(state.mafiaSelections);
-          targetId = selections[selections.length - 1] ?? null;
+          targetId = selections.at(-1) ?? null;
         } else if (expectedStep === "DOCTOR_CHOOSE") {
           targetId = state.doctorSelection;
         } else {
@@ -314,92 +321,69 @@ export const nightService = {
     };
   },
 
-  
-async goToDiscussion(roomCode, expectedStep) {
-  const room = await getNightRoom(roomCode);
+  async goToDiscussion(roomCode, expectedStep) {
+    const room = await getNightRoom(roomCode);
 
-  if (
-    room.nightStep !== "NIGHT_END" ||
-    expectedStep !== "NIGHT_END"
-  ) {
-    throw new Error("The night can only end after the final night step.");
-  }
+    if (
+      room.nightStep !== "NIGHT_END" ||
+      expectedStep !== "NIGHT_END"
+    ) {
+      throw new Error(
+        "The night can only end after the final night step.",
+      );
+    }
 
-  const state = getNightState(room.nightState);
+    const state = getNightState(room.nightState);
+    const mafiaSelections = Object.values(state.mafiaSelections);
 
-  const mafiaSelections = Object.values(state.mafiaSelections);
+    const mafiaTargetId =
+      state.mafiaTarget ??
+      mafiaSelections.at(-1) ??
+      null;
 
-  const mafiaTargetId =
-    state.mafiaTarget ??
-    mafiaSelections[mafiaSelections.length - 1] ??
-    null;
+    const doctorSaveId =
+      state.doctorSave ??
+      state.doctorSelection ??
+      null;
 
-  const doctorSaveId =
-    state.doctorSave ??
-    state.doctorSelection ??
-    null;
+    if (hasLivingRole(room, "MAFIA") && !mafiaTargetId) {
+      throw new Error(
+        "The Mafia must select a target before the night can end.",
+      );
+    }
 
-  if (hasLivingRole(room, "MAFIA") && !mafiaTargetId) {
-    throw new Error(
-      "The Mafia must select a target before the night can end.",
+    const killedPlayerId =
+      mafiaTargetId && mafiaTargetId !== doctorSaveId
+        ? mafiaTargetId
+        : null;
+
+    state.mafiaTarget = mafiaTargetId;
+    state.doctorSave = doctorSaveId;
+
+    const result = await gameRepository.resolveNightAndStartDiscussion(
+      room.id,
+      state,
+      killedPlayerId,
     );
-  }
 
-  const killedPlayerId =
-    mafiaTargetId && mafiaTargetId !== doctorSaveId
-      ? mafiaTargetId
+    if (result.count !== 1) {
+      throw new Error(
+        "The night has already ended. Refresh and try again.",
+      );
+    }
+
+    const eliminatedPlayer = killedPlayerId
+      ? room.players.find((player) => player.id === killedPlayerId)
       : null;
 
-  state.mafiaTarget = mafiaTargetId;
-  state.doctorSave = doctorSaveId;
-
-  const result = await gameRepository.resolveNightAndStartDiscussion(
-    room.id,
-    state,
-    killedPlayerId,
-  );
-
-  if (result.count !== 1) {
-    throw new Error("The night has already ended. Refresh and try again.");
-  }
-
-  const eliminatedPlayer = killedPlayerId
-    ? room.players.find((player) => player.id === killedPlayerId)
-    : null;
-
-  return {
-    phase: "DISCUSSION",
-    round: room.currentRoundNumber,
-    eliminatedPlayerId: killedPlayerId,
-    eliminatedUsername: eliminatedPlayer?.username ?? null,
-    savedPlayerId: killedPlayerId ? null : mafiaTargetId,
-    announcement: killedPlayerId
-      ? "ELIMINATED"
-      : "NO_DEATH",
-  };
-},
-
-async startVoting(roomCode) {
-  const room = await gameRepository.findRoomByCode(roomCode);
-
-  if (!room) {
-    throw new Error("Room not found.");
-  }
-
-  if (room.status !== "PLAYING" || room.phase !== "DISCUSSION") {
-    throw new Error("Voting can only start during daytime discussion.");
-  }
-
-  const result = await gameRepository.startVotingFromDiscussion(room.id);
-
-  if (result.count !== 1) {
-    throw new Error("Voting has already started. Refresh and try again.");
-  }
-
-  return {
-    phase: "VOTING",
-    round: room.currentRoundNumber,
-  };
-},
-
+    return {
+      phase: result.gameResult ? "FINISHED" : "DISCUSSION",
+      round: room.currentRoundNumber,
+      eliminatedPlayerId: killedPlayerId,
+      eliminatedUsername: eliminatedPlayer?.username ?? null,
+      savedPlayerId: killedPlayerId ? null : mafiaTargetId,
+      announcement: killedPlayerId ? "ELIMINATED" : "NO_DEATH",
+      gameResult: result.gameResult ?? null,
+    };
+  },
 };

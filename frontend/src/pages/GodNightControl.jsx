@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -9,6 +8,10 @@ import {
   Sun,
   Skull,
   CheckCircle2,
+  Vote,
+  RefreshCw,
+  Ban,
+  Trophy,
 } from "lucide-react";
 import { connectPlayerSocket } from "../services/socket";
 
@@ -24,10 +27,7 @@ const prompts = {
     title: "Doctor chooses someone to save",
     button: "Next",
   },
-  POLICE_WAKE: {
-    title: "Police wake up",
-    button: "Next",
-  },
+  POLICE_WAKE: { title: "Police wake up", button: "Next" },
   POLICE_CHOOSE: {
     title: "Police investigates a player",
     button: "Next",
@@ -38,6 +38,91 @@ const prompts = {
   },
 };
 
+function WinnerPanel({ result, players }) {
+  const winner = result?.winner;
+  const title =
+    winner === "MAFIA"
+      ? "Mafia Wins"
+      : winner === "CIVILIANS"
+        ? "Civilians Win"
+        : winner === "DRAW"
+          ? "It's a Draw"
+          : "Game Finished";
+
+  const description =
+    result?.reason ??
+    "The game has ended.";
+
+  const winningPlayers = (players ?? []).filter(
+    (player) =>
+      !player.isHost &&
+      (winner === "MAFIA"
+        ? player.role === "MAFIA"
+        : winner === "CIVILIANS"
+          ? player.role !== "MAFIA"
+          : false),
+  );
+
+  return (
+    <section className="mt-8 rounded-2xl border border-amber-400/30 bg-amber-400/5 p-6 text-center sm:p-8">
+      <Trophy className="mx-auto text-amber-300" size={48} />
+      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.3em] text-amber-300">
+        Game over
+      </p>
+      <h2 className="mt-3 text-3xl font-black sm:text-4xl">{title}</h2>
+      <p className="mx-auto mt-3 max-w-xl text-slate-300">{description}</p>
+
+      {winningPlayers.length > 0 && (
+        <div className="mt-6">
+          <p className="text-sm font-semibold text-slate-300">
+            {winner === "MAFIA" ? "Mafia team" : "Civilian team"}
+          </p>
+          <div className="mt-3 flex flex-wrap justify-center gap-2">
+            {winningPlayers.map((player) => (
+              <span
+                key={player.id}
+                className="rounded-full border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+              >
+                {player.username}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-6 rounded-xl bg-slate-950/70 p-4 text-left">
+        <p className="mb-3 text-sm font-semibold text-slate-300">
+          Final roles
+        </p>
+        <div className="space-y-2">
+          {(players ?? [])
+            .filter((player) => !player.isHost)
+            .map((player) => (
+              <div
+                key={player.id}
+                className="flex items-center justify-between gap-3 rounded-lg bg-white/5 p-3"
+              >
+                <span
+                  className={
+                    player.isAlive
+                      ? "text-white"
+                      : "text-slate-500 line-through"
+                  }
+                >
+                  {player.username}
+                </span>
+                <span className="text-sm text-indigo-300">
+                  {player.role ?? "Unknown"}
+                  {!player.isAlive ? " · Eliminated" : ""}
+                </span>
+              </div>
+            ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function GodNightControl() {
   const { roomCode: paramCode } = useParams();
   const roomCode = (paramCode || "").toUpperCase();
@@ -47,51 +132,28 @@ export default function GodNightControl() {
   const [state, setState] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [votingProgress, setVotingProgress] = useState(null);
+  const [votingResult, setVotingResult] = useState(null);
   const [nightResult, setNightResult] = useState(null);
 
   useEffect(() => {
     let active = true;
-    let resultTimeout;
     let currentSocket;
+    let nightTimer;
+    let votingTimer;
 
-    const handleGodState = (nextState) => {
-      if (!active || !nextState) return;
+    const mergeState = (next) => {
+      if (!active || !next) return;
 
-      setState(nextState);
-      setError("");
-
-      if (nextState.phase === "VOTING") {
-        navigate(`/room/${roomCode}/round`, { replace: true });
-      }
-    };
-
-    const handlePhaseChanged = (data) => {
-      if (!active || !data) return;
-
-      setState((previous) =>
-        previous
-          ? {
-              ...previous,
-              phase: data.phase,
-              round: data.round ?? previous.round,
-            }
-          : previous,
-      );
-
-      if (data.phase === "VOTING") {
-        navigate(`/room/${roomCode}/round`, { replace: true });
-      }
-    };
-
-    const handleNightResult = (result) => {
-      if (!active || !result) return;
-
-      clearTimeout(resultTimeout);
-      setNightResult(result);
-
-      resultTimeout = setTimeout(() => {
-        if (active) setNightResult(null);
-      }, 4000);
+      setState((previous) => ({
+        ...(previous ?? {}),
+        ...next,
+        players: next.players ?? previous?.players ?? [],
+        gameResult:
+          next.gameResult ??
+          previous?.gameResult ??
+          null,
+      }));
     };
 
     try {
@@ -102,21 +164,57 @@ export default function GodNightControl() {
         return;
       }
 
-      const session = JSON.parse(raw);
-      currentSocket = connectPlayerSocket(session);
+      currentSocket = connectPlayerSocket(JSON.parse(raw));
 
-      currentSocket.on("game:night:god-state", handleGodState);
-      currentSocket.on("game:night:phase-changed", handlePhaseChanged);
-      currentSocket.on("game:night:result", handleNightResult);
+      currentSocket.on("game:night:god-state", mergeState);
+      currentSocket.on("game:night:public-state", mergeState);
+
+      currentSocket.on("game:night:phase-changed", (data) => {
+        if (!active || !data) return;
+        setState((previous) =>
+          previous
+            ? {
+                ...previous,
+                ...data,
+                gameResult: data.gameResult ?? previous.gameResult,
+              }
+            : previous,
+        );
+      });
+
+      currentSocket.on("game:night:result", (result) => {
+        if (!active || !result) return;
+        clearTimeout(nightTimer);
+        setNightResult(result);
+        nightTimer = setTimeout(() => {
+          if (active) setNightResult(null);
+        }, 4000);
+      });
+
+      currentSocket.on("game:voting:god-state", (data) => {
+        if (active && data) setVotingProgress(data);
+      });
+
+      currentSocket.on("game:voting:result", (result) => {
+        if (!active || !result) return;
+        clearTimeout(votingTimer);
+        setVotingResult(result);
+        votingTimer = setTimeout(() => {
+          if (active) setVotingResult(null);
+        }, result.outcome === "TIE" ? 0 : 4000);
+      });
+
+      currentSocket.on("game:voting:revote-started", () => {
+        if (!active) return;
+        setVotingResult(null);
+      });
 
       currentSocket.on("connect", () => {
+        if (!active) return;
+        setError("");
         currentSocket.emit("game:night:get-state", (response) => {
-          if (!active) return;
-
-          if (!response?.success) {
-            setError(
-              response?.message || "Could not restore game state.",
-            );
+          if (active && !response?.success) {
+            setError(response?.message || "Could not restore game state.");
           }
         });
       });
@@ -131,20 +229,22 @@ export default function GodNightControl() {
 
       setSocket(currentSocket);
       currentSocket.connect();
-    } catch {
+    } catch (err) {
+      console.error("GodNightControl initialization failed:", err);
       setError("Could not restore the room session.");
     }
 
     return () => {
       active = false;
-      clearTimeout(resultTimeout);
+      clearTimeout(nightTimer);
+      clearTimeout(votingTimer);
       currentSocket?.removeAllListeners();
       currentSocket?.disconnect();
     };
-  }, [roomCode, navigate]);
+  }, [roomCode]);
 
   function sendAction(eventName, payload) {
-    if (!socket?.connected || busy) return;
+    if (!socket?.connected || busy || state?.phase === "FINISHED") return;
 
     setBusy(true);
     setError("");
@@ -159,6 +259,15 @@ export default function GodNightControl() {
 
       if (!response?.success) {
         setError(response?.message || "Action failed.");
+        return;
+      }
+
+      if (response.phase === "FINISHED" && response.gameResult) {
+        setState((previous) => ({
+          ...previous,
+          phase: "FINISHED",
+          gameResult: response.gameResult,
+        }));
       }
     };
 
@@ -169,42 +278,43 @@ export default function GodNightControl() {
     }
   }
 
-  if (error && !state) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-white">
-        <div className="max-w-md text-center">
-          <p className="text-red-300">{error}</p>
-          <button
-            onClick={() => navigate(`/room/${roomCode}`)}
-            className="mt-4 text-sm text-slate-400 underline"
-          >
-            Return to room
-          </button>
-        </div>
-      </main>
-    );
-  }
-
   if (!state) {
     return (
-      <main className="flex min-h-screen items-center justify-center gap-3 bg-slate-950 text-white">
-        <LoaderCircle className="animate-spin" />
-        Loading night state...
+      <main className="flex min-h-screen items-center justify-center gap-3 bg-slate-950 p-6 text-white">
+        {error ? (
+          <div className="text-center">
+            <p className="text-red-300">{error}</p>
+            <button
+              type="button"
+              onClick={() => navigate(`/room/${roomCode}`)}
+              className="mt-4 text-sm text-slate-400 underline"
+            >
+              Return to room
+            </button>
+          </div>
+        ) : (
+          <>
+            <LoaderCircle className="animate-spin" />
+            Loading game state...
+          </>
+        )}
       </main>
     );
   }
 
+  const isFinished =
+    state.phase === "FINISHED" || Boolean(state.gameResult);
   const isPreNight = ["LOBBY", "ROLE_ASSIGNMENT"].includes(state.phase);
+  const isNight = state.phase === "NIGHT";
+  const isDiscussion = state.phase === "DISCUSSION";
+  const isVoting = state.phase === "VOTING";
   const prompt = prompts[state.nightStep];
   const nightState = state.nightState ?? {};
+  const mafiaSelections = Object.entries(nightState.mafiaSelections ?? {});
 
-  const getPlayerName = (playerId) =>
-    state.players?.find((player) => player.id === playerId)?.username ??
+  const getPlayerName = (id) =>
+    state.players?.find((player) => player.id === id)?.username ??
     "Unknown player";
-
-  const mafiaSelections = Object.entries(
-    nightState.mafiaSelections ?? {},
-  );
 
   const currentTargetId =
     state.nightStep === "MAFIA_CHOOSE"
@@ -216,270 +326,388 @@ export default function GodNightControl() {
           : null;
 
   const isChooseStep = Boolean(state.nightStep?.endsWith("_CHOOSE"));
-
   const hasSelection =
     state.nightStep === "MAFIA_CHOOSE"
       ? mafiaSelections.length > 0
       : Boolean(currentTargetId);
 
+  const status =
+    votingProgress?.status ??
+    votingProgress?.votingStatus ??
+    "OPEN";
+  const submitted = Number(votingProgress?.votesSubmitted ?? 0);
+  const eligible = Number(votingProgress?.totalEligible ?? 0);
+  const allVotesSubmitted = eligible > 0 && submitted >= eligible;
+  const finalCounts =
+    votingResult?.counts ??
+    (status === "TIE" ? votingProgress?.counts : null) ??
+    [];
+
   return (
-    <main className="relative min-h-screen bg-slate-950 px-4 py-10 text-white">
+    <main className="min-h-screen bg-slate-950 px-4 py-10 text-white">
       <div className="mx-auto max-w-3xl">
         <p className="text-sm uppercase tracking-[0.25em] text-indigo-400">
           Mafia · God controls
         </p>
-
         <h1 className="mt-3 text-3xl font-bold">
-          {state.phase === "DISCUSSION"
-            ? `Day ${state.round || 1}`
-            : `Night ${state.round || 1}`}
+          {isFinished
+            ? "Game complete"
+            : isDiscussion || isVoting
+              ? `Day ${state.round || 1}`
+              : `Night ${state.round || 1}`}
         </h1>
-
         <p className="mt-2 text-slate-400">Room: {roomCode}</p>
 
         {error && (
           <p
             role="alert"
-            className="mt-5 rounded-xl bg-red-500/10 p-4 text-red-300"
+            className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-300"
           >
             {error}
           </p>
         )}
 
-        <section className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/70 p-8">
-          <div className="flex items-center gap-3">
-            {state.phase === "DISCUSSION" ? (
-              <Sun className="text-amber-400" size={28} />
-            ) : (
-              <Moon className="text-indigo-400" size={28} />
+        {isFinished ? (
+          <WinnerPanel
+            result={state.gameResult}
+            players={state.players}
+          />
+        ) : (
+          <section className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/70 p-6 sm:p-8">
+            <div className="flex items-center gap-3">
+              {isDiscussion || isVoting ? (
+                <Sun className="text-amber-400" size={28} />
+              ) : (
+                <Moon className="text-indigo-400" size={28} />
+              )}
+              <div>
+                <p className="text-sm text-slate-400">Current phase</p>
+                <p className="font-semibold">{state.phase}</p>
+              </div>
+            </div>
+
+            {isPreNight && (
+              <>
+                <h2 className="mt-8 text-xl font-semibold">Ready to start?</h2>
+                <p className="mt-2 text-slate-400">
+                  Make sure every playing participant has a role.
+                </p>
+                <button
+                  type="button"
+                  disabled={busy || !socket?.connected}
+                  onClick={() => sendAction("game:night:start")}
+                  className="mt-6 w-full rounded-xl bg-indigo-500 px-5 py-3 font-semibold disabled:opacity-50"
+                >
+                  {busy ? "Starting..." : "Start Night 1"}
+                </button>
+              </>
             )}
 
-            <div>
-              <p className="text-sm text-slate-400">Current phase</p>
-              <p className="font-semibold">{state.phase}</p>
-            </div>
-          </div>
+            {isNight && prompt && (
+              <>
+                <h2 className="mt-8 text-2xl font-semibold">{prompt.title}</h2>
+                <p className="mt-2 text-sm text-slate-400">
+                  Round {state.round || 1} · Step {state.nightStep}
+                </p>
 
-          {isPreNight ? (
-            <>
-              <h2 className="mt-8 text-xl font-semibold">
-                Ready to start?
-              </h2>
+                {isChooseStep && (
+                  <div className="mt-5 rounded-xl border border-slate-700 bg-slate-950 p-4">
+                    <h3 className="font-semibold text-slate-300">
+                      Player selections
+                    </h3>
+                    {state.nightStep === "MAFIA_CHOOSE" ? (
+                      mafiaSelections.length ? (
+                        <div className="mt-3 space-y-2">
+                          {mafiaSelections.map(([playerId, targetId]) => (
+                            <div
+                              key={playerId}
+                              className="flex justify-between gap-3 text-sm"
+                            >
+                              <span className="text-slate-400">
+                                {getPlayerName(playerId)}
+                              </span>
+                              <span className="text-indigo-300">
+                                → {getPlayerName(targetId)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="mt-3 text-sm text-amber-300">
+                          Waiting for Mafia to select a target...
+                        </p>
+                      )
+                    ) : (
+                      <p className="mt-3 text-sm text-indigo-300">
+                        {currentTargetId
+                          ? `${getPlayerName(currentTargetId)} selected`
+                          : "Waiting for a selection..."}
+                      </p>
+                    )}
+                  </div>
+                )}
 
-              <p className="mt-2 text-slate-400">
-                Make sure every playing participant has a role.
-              </p>
+                <button
+                  type="button"
+                  disabled={
+                    busy ||
+                    !socket?.connected ||
+                    (isChooseStep && !hasSelection)
+                  }
+                  onClick={() =>
+                    sendAction("game:night:advance", {
+                      expectedStep: state.nightStep,
+                    })
+                  }
+                  className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-500 px-5 py-3 font-semibold disabled:opacity-50"
+                >
+                  {busy && <LoaderCircle className="animate-spin" size={18} />}
+                  {busy ? "Please wait..." : prompt.button}
+                </button>
+              </>
+            )}
 
-              <button
-                disabled={busy || !socket?.connected}
-                onClick={() => sendAction("game:night:start")}
-                className="mt-6 w-full rounded-xl bg-indigo-500 px-5 py-3 font-semibold hover:bg-indigo-400 disabled:opacity-50"
-              >
-                {busy ? "Starting..." : "Start Night 1"}
-              </button>
-            </>
-          ) : state.phase === "NIGHT" && prompt ? (
-            <>
-              <h2 className="mt-8 text-2xl font-semibold">
-                {prompt.title}
-              </h2>
+            {isDiscussion && (
+              <>
+                <h2 className="mt-8 text-2xl font-semibold">
+                  Day {state.round || 1} — Discussion
+                </h2>
+                <p className="mt-3 text-slate-400">
+                  Let the players discuss. Start voting when everyone is ready.
+                </p>
+                <button
+                  type="button"
+                  disabled={busy || !socket?.connected}
+                  onClick={() => sendAction("game:discussion:start-voting")}
+                  className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-rose-500 px-5 py-3 font-semibold disabled:opacity-50"
+                >
+                  <Users size={18} />
+                  {busy ? "Starting..." : "Start Voting"}
+                </button>
+              </>
+            )}
 
-              <p className="mt-2 text-sm text-slate-400">
-                Round {state.round || 1} · Step {state.nightStep}
-              </p>
+            {isVoting && (
+              <div className="mt-8">
+                <div className="flex items-center gap-3">
+                  <Vote className="text-rose-400" size={28} />
+                  <div>
+                    <h2 className="text-2xl font-semibold">Voting control</h2>
+                    <p className="text-sm text-slate-400">
+                      Live tally visible to God only.
+                    </p>
+                  </div>
+                </div>
 
-              {isChooseStep && (
-                <div className="mt-5 rounded-xl border border-indigo-500/20 bg-slate-950 p-4">
-                  <h3 className="text-sm font-semibold text-slate-300">
-                    Player selections
-                  </h3>
+                {!votingResult && (
+                  <>
+                    <div className="mt-6 rounded-xl border border-slate-700 bg-slate-950 p-5">
+                      <p className="text-sm text-slate-400">Votes submitted</p>
+                      <p className="mt-1 text-3xl font-bold tabular-nums">
+                        {submitted}
+                        <span className="text-lg text-slate-500">
+                          {" "}/ {eligible}
+                        </span>
+                      </p>
+                      <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-800">
+                        <div
+                          className="h-full bg-indigo-400 transition-all"
+                          style={{
+                            width: `${
+                              eligible
+                                ? Math.min(100, (submitted / eligible) * 100)
+                                : 0
+                            }%`,
+                          }}
+                        />
+                      </div>
+                      <p className="mt-3 text-xs text-slate-500">
+                        Players cannot see the live tally.
+                      </p>
+                    </div>
 
-                  {state.nightStep === "MAFIA_CHOOSE" ? (
-                    mafiaSelections.length > 0 ? (
-                      <div className="mt-3 space-y-2">
-                        {mafiaSelections.map(([playerId, targetId]) => (
-                          <div
-                            key={playerId}
-                            className="flex justify-between gap-3 text-sm"
-                          >
-                            <span className="text-slate-400">
-                              {getPlayerName(playerId)}
-                            </span>
-
-                            <span className="font-medium text-indigo-300">
-                              → {getPlayerName(targetId)}
+                    <h3 className="mt-6 font-semibold">Live vote tally</h3>
+                    <div className="mt-3 space-y-3">
+                      {(votingProgress?.counts ?? []).map((candidate) => (
+                        <div
+                          key={candidate.playerId}
+                          className="rounded-xl border border-slate-800 bg-slate-950 p-4"
+                        >
+                          <div className="flex justify-between gap-4">
+                            <span>{candidate.username}</span>
+                            <span className="font-semibold text-indigo-300">
+                              {candidate.count}
                             </span>
                           </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="mt-3 text-sm text-amber-300">
-                        Waiting for Mafia to select a target...
+                          <div className="mt-3 h-1.5 rounded-full bg-slate-800">
+                            <div
+                              className="h-1.5 rounded-full bg-indigo-400"
+                              style={{
+                                width: `${
+                                  submitted
+                                    ? Math.min(
+                                        100,
+                                        (candidate.count / submitted) * 100,
+                                      )
+                                    : 0
+                                }%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={
+                        busy ||
+                        !socket?.connected ||
+                        !allVotesSubmitted ||
+                        status !== "OPEN"
+                      }
+                      onClick={() => sendAction("game:voting:end")}
+                      className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-rose-500 px-5 py-3 font-semibold disabled:opacity-40"
+                    >
+                      <Vote size={18} />
+                      {allVotesSubmitted
+                        ? "End Voting & Reveal Results"
+                        : `Waiting for votes (${submitted}/${eligible})`}
+                    </button>
+                  </>
+                )}
+
+                {votingResult?.outcome === "TIE" && (
+                  <div className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/5 p-5">
+                    <h3 className="text-lg font-semibold text-amber-300">
+                      Tie — God must decide
+                    </h3>
+                    <div className="mt-4 space-y-2">
+                      {finalCounts.map((candidate) => (
+                        <div
+                          key={candidate.playerId}
+                          className="flex justify-between rounded-lg bg-slate-950 p-3"
+                        >
+                          <span>{candidate.username}</span>
+                          <span className="text-amber-300">
+                            {candidate.count} vote
+                            {candidate.count === 1 ? "" : "s"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={busy || !socket?.connected}
+                      onClick={() => sendAction("game:voting:revote")}
+                      className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-500 px-4 py-3 font-semibold disabled:opacity-50"
+                    >
+                      <RefreshCw size={18} />
+                      Revote Between Tied Players
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy || !socket?.connected}
+                      onClick={() =>
+                        sendAction("game:voting:no-elimination")
+                      }
+                      className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-semibold disabled:opacity-50"
+                    >
+                      <Ban size={18} />
+                      No Elimination — Start Next Night
+                    </button>
+                  </div>
+                )}
+
+                {votingResult && votingResult.outcome !== "TIE" && (
+                  <div className="mt-6 rounded-xl border border-slate-700 bg-slate-950 p-5">
+                    <h3 className="text-lg font-semibold">
+                      {votingResult.outcome === "GAME_OVER"
+                        ? "Game finished"
+                        : votingResult.outcome === "ELIMINATED"
+                          ? `${votingResult.eliminatedUsername} was eliminated`
+                          : "No elimination"}
+                    </h3>
+                    <div className="mt-4 space-y-2">
+                      {finalCounts.map((candidate) => (
+                        <div
+                          key={candidate.playerId}
+                          className="flex justify-between rounded-lg bg-slate-900 p-3"
+                        >
+                          <span>{candidate.username}</span>
+                          <span className="text-indigo-300">
+                            {candidate.count} vote
+                            {candidate.count === 1 ? "" : "s"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    {votingResult.gameResult && (
+                      <p className="mt-4 text-amber-300">
+                        {votingResult.gameResult.reason}
                       </p>
-                    )
-                  ) : currentTargetId ? (
-                    <p className="mt-3 text-sm text-indigo-300">
-                      {state.nightStep === "DOCTOR_CHOOSE"
-                        ? "Doctor will save"
-                        : "Police is investigating"}
-                      : {getPlayerName(currentTargetId)}
-                    </p>
-                  ) : (
-                    <p className="mt-3 text-sm text-amber-300">
-                      Waiting for the player to select a target...
-                    </p>
-                  )}
-                </div>
-              )}
-
-              <button
-                disabled={
-                  busy ||
-                  !socket?.connected ||
-                  (isChooseStep && !hasSelection)
-                }
-                onClick={() =>
-                  sendAction("game:night:advance", {
-                    expectedStep: state.nightStep,
-                  })
-                }
-                className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-500 px-5 py-3 font-semibold hover:bg-indigo-400 disabled:opacity-50"
-              >
-                {busy ? (
-                  <LoaderCircle className="animate-spin" size={18} />
-                ) : (
-                  <Shield size={18} />
+                    )}
+                  </div>
                 )}
-
-                {busy ? "Please wait..." : prompt.button}
-              </button>
-            </>
-          ) : state.phase === "DISCUSSION" ? (
-            <>
-              <h2 className="mt-8 text-2xl font-semibold">
-                Day {state.round || 1} — Discussion
-              </h2>
-
-              <p className="mt-3 text-slate-400">
-                Let the players discuss what happened during the night.
-                Start voting when everyone is ready.
-              </p>
-
-              <button
-                disabled={busy || !socket?.connected}
-                onClick={() =>
-                  sendAction("game:discussion:start-voting")
-                }
-                className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-rose-500 px-5 py-3 font-semibold hover:bg-rose-400 disabled:opacity-50"
-              >
-                {busy ? (
-                  <LoaderCircle className="animate-spin" size={18} />
-                ) : (
-                  <Users size={18} />
-                )}
-
-                {busy ? "Starting..." : "Start Voting"}
-              </button>
-            </>
-          ) : state.phase === "VOTING" ? (
-            <>
-              <h2 className="mt-8 text-xl font-semibold">
-                Voting phase started
-              </h2>
-
-              <p className="mt-2 text-slate-400">
-                Players can now prepare to cast their votes.
-              </p>
-            </>
-          ) : (
-            <p className="mt-8 text-slate-400">
-              Waiting for the next phase.
-            </p>
-          )}
-        </section>
+              </div>
+            )}
+          </section>
+        )}
 
         <section className="mt-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
           <h2 className="flex items-center gap-2 font-semibold">
             <Users size={20} className="text-indigo-400" />
             Players
           </h2>
-
           <div className="mt-4 space-y-2">
             {(state.players ?? []).map((player) => (
               <div
                 key={player.id}
-                className="flex justify-between rounded-lg bg-slate-950 p-3"
+                className="flex justify-between gap-3 rounded-lg bg-slate-950 p-3"
               >
                 <span
                   className={
-                    player.isAlive
-                      ? ""
-                      : "text-slate-500 line-through"
+                    player.isAlive ? "" : "text-slate-500 line-through"
                   }
                 >
                   {player.username}
+                  {player.isHost ? " (God)" : ""}
                 </span>
-
-                {!player.isAlive && (
-                  <span className="text-xs text-red-400">
-                    Eliminated
-                  </span>
-                )}
+                <span className="text-xs text-slate-400">
+                  {isFinished && !player.isHost && player.role
+                    ? player.role
+                    : !player.isAlive
+                      ? "Eliminated"
+                      : player.isConnected
+                        ? "Connected"
+                        : "Disconnected"}
+                </span>
               </div>
             ))}
           </div>
         </section>
       </div>
 
-      {nightResult && (
-        <div
-          role="status"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/95 px-6 text-center backdrop-blur-md"
-        >
+      {nightResult && !isFinished && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/95 px-6 text-center">
           <div className="max-w-xl">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-indigo-400/30 bg-indigo-500/10">
-              {nightResult.announcement === "NO_DEATH" ? (
-                <CheckCircle2
-                  size={34}
-                  className="text-emerald-300"
-                />
-              ) : (
-                <Skull size={34} className="text-rose-400" />
-              )}
-            </div>
-
-            <p className="mt-6 text-sm uppercase tracking-[0.35em] text-indigo-400">
+            {nightResult.announcement === "NO_DEATH" ? (
+              <CheckCircle2 className="mx-auto text-emerald-300" size={48} />
+            ) : (
+              <Skull className="mx-auto text-rose-400" size={48} />
+            )}
+            <p className="mt-6 text-sm uppercase tracking-[0.3em] text-indigo-400">
               The sun rises
             </p>
-
-            {nightResult.announcement === "NO_DEATH" ? (
-              <>
-                <h2 className="mt-6 text-4xl font-black text-emerald-300 sm:text-5xl">
-                  Nobody died!
-                </h2>
-
-                <p className="mt-5 text-lg text-slate-300">
-                  The Mafia tried. The Doctor denied. Everyone lives
-                  to argue another day.
-                </p>
-              </>
-            ) : (
-              <>
-                <h2 className="mt-6 text-4xl font-black text-rose-400 sm:text-5xl">
-                  A dark morning...
-                </h2>
-
-                <p className="mt-5 text-lg text-slate-300">
-                  {nightResult.eliminatedUsername ||
-                    "Someone"}{" "}
-                  didn't make it to breakfast. Their secrets stay
-                  buried... for now.
-                </p>
-              </>
-            )}
-
-            <p className="mt-8 animate-pulse text-sm text-slate-500">
-              Daylight is breaking...
+            <h2 className="mt-5 text-4xl font-black">
+              {nightResult.announcement === "NO_DEATH"
+                ? "Nobody died!"
+                : "A dark morning..."}
+            </h2>
+            <p className="mt-5 text-slate-300">
+              {nightResult.announcement === "NO_DEATH"
+                ? "The Doctor saved the target. Everyone lives to argue another day."
+                : `${nightResult.eliminatedUsername || "Someone"} didn't make it to breakfast.`}
             </p>
           </div>
         </div>
