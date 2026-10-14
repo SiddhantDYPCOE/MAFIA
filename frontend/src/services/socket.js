@@ -1,39 +1,37 @@
 import { io } from "socket.io-client";
 
 const SOCKET_URL =
-import.meta.env.VITE_SOCKET_URL || "https://mafia-jdx6.onrender.com" ||"http://localhost:5000";
+  import.meta.env.VITE_SOCKET_URL ||
+  "https://mafia-jdx6.onrender.com";
 
 export function connectPlayerSocket(session) {
-if (
-!session?.roomCode ||
-!session?.playerId ||
-!session?.reconnectSecret
-) {
-throw new Error("Invalid or missing player session.");
-}
+  if (
+    !session?.roomCode ||
+    !session?.playerId ||
+    !session?.reconnectSecret
+  ) {
+    throw new Error("Invalid or missing player session.");
+  }
 
-return io(SOCKET_URL, {
-autoConnect: false,
-withCredentials: true,
-auth: {
-roomCode: session.roomCode.toUpperCase(),
-playerId: session.playerId,
-reconnectSecret: session.reconnectSecret,
-},
-});
+  return io(SOCKET_URL, {
+    autoConnect: false,
+    withCredentials: true,
+    auth: {
+      roomCode: session.roomCode.toUpperCase(),
+      playerId: session.playerId,
+      reconnectSecret: session.reconnectSecret,
+    },
+  });
 }
 
 export function getSavedSession(roomCode) {
-try {
-const raw = sessionStorage.getItem(
-`mafia_session_${roomCode.toUpperCase()}`
-);
+  try {
+    const raw = sessionStorage.getItem(
+      `mafia_session_${roomCode.toUpperCase()}`
+    );
 
-
-return raw ? JSON.parse(raw) : null;
-
-
-} catch {
-return null;
-}
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
 }
