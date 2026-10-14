@@ -73,6 +73,16 @@ export const roomRepository = {
     });
   },
 
+deleteExpiredRooms(cutoff) {
+  return prisma.gameRoom.deleteMany({
+    where: {
+      createdAt: {
+        lt: cutoff,
+      },
+    },
+  });
+},
+
   deleteRoomById(roomId) {
   return prisma.gameRoom.delete({
     where: { id: roomId },

@@ -7,11 +7,14 @@ import prisma from "./src/db.js";
 import { createSocketServer } from "./src/config/socket.js";
 import { registerSocketHandlers } from "./src/socket/index.js";
 
+import { startRoomCleanup } from "./src/modules/room/room.cleanup.js";
+
 const PORT = Number(process.env.PORT) || 5000;
 
 const httpServer = createServer(app);
 
 const io = createSocketServer(httpServer);
+startRoomCleanup();
 
 registerSocketHandlers(io);
 
