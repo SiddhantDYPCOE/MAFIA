@@ -861,7 +861,7 @@ export default function GodNightControl() {
                   Round {state.round || 1} · Step {state.nightStep}
                 </p>
 
-                {isChooseStep && (
+                {/* {isChooseStep && (
                   <div className="mt-5 border border-neutral-800 bg-neutral-950 p-4">
                     <h3 className="font-semibold text-neutral-300">
                       Player selections
@@ -900,7 +900,7 @@ export default function GodNightControl() {
                       </p>
                     )}
                   </div>
-                )}
+                )} */}
 
                 <button
                   type="button"
