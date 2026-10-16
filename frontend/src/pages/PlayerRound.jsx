@@ -329,7 +329,7 @@ export default function PlayerRound() {
             if (active) {
               setEliminationAnnouncement(null);
             }
-          }, 4500);
+          }, 6500);
         }
 
         // Keep a tie visible until God resolves it.
