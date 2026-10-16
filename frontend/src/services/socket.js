@@ -26,7 +26,7 @@ export function connectPlayerSocket(session) {
 
 export function getSavedSession(roomCode) {
   try {
-    const raw = sessionStorage.getItem(
+    const raw = localStorage.getItem(
       `mafia_session_${roomCode.toUpperCase()}`
     );
 

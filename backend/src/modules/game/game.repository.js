@@ -524,7 +524,70 @@ export const gameRepository = {
       };
     });
   },
+async resetFinishedGame(roomCode) {
+  return prisma.$transaction(
+    async (tx) => {
+      const room = await tx.gameRoom.findUnique({
+        where: { code: roomCode },
+        select: {
+          id: true,
+          phase: true,
+        },
+      });
 
+      if (!room) {
+        throw new Error("Room not found.");
+      }
+
+      if (room.phase !== "FINISHED") {
+        throw new Error("You can only play again after the game finishes.");
+      }
+
+      // Remove voting history from the previous game.
+      await tx.vote.deleteMany({
+        where: { roomId: room.id },
+      });
+
+      // Remove the previous game's rounds.
+      await tx.gameRound.deleteMany({
+        where: { roomId: room.id },
+      });
+
+      // Keep every player and their reconnect credentials.
+      await tx.player.updateMany({
+        where: { roomId: room.id },
+        data: {
+          role: null,
+          isAlive: true,
+        },
+      });
+
+      // Reset the existing room for a fresh game.
+      await tx.gameRoom.update({
+        where: { id: room.id },
+        data: {
+          status: "LOBBY",
+          phase: "LOBBY",
+          currentRoundNumber: 0,
+          nightStep: null,
+          nightState: null,
+        },
+      });
+
+      return tx.gameRoom.findUnique({
+        where: { id: room.id },
+        include: {
+          players: {
+            orderBy: { joinedAt: "asc" },
+          },
+        },
+      });
+    },
+    {
+      isolationLevel: "Serializable",
+    },
+  );
+},
   async updateRoom(roomId, data) {
     return prisma.gameRoom.update({
       where: { id: roomId },

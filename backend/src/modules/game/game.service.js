@@ -1,4 +1,5 @@
 
+import { roomService } from "../room/room.service.js";
 import { gameRepository } from "./game.repository.js";
 
 const ROLE_LIMITS = {
@@ -151,6 +152,14 @@ export const gameService = {
     };
   },
 
+async playAgain(roomCode) {
+  const room = await gameRepository.resetFinishedGame(
+    roomCode.toUpperCase(),
+  );
+
+  return roomService.toPublicRoom(room);
+},
+
   async startGame(roomCode) {
   const room = await gameRepository.findRoomByCode(roomCode);
 
@@ -187,5 +196,7 @@ export const gameService = {
     message: "Game started. Players can now reveal their roles.",
     phase: "ROLE_ASSIGNMENT",
   };
+
+  
 }
 };

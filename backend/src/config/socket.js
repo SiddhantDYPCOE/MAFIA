@@ -17,6 +17,7 @@ export function createSocketServer(httpServer) {
           callback(new Error("Not allowed by Socket.IO CORS"));
         }
       },
+    
       methods: ["GET", "POST"],
       credentials: true,
     },

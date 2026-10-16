@@ -1,9 +1,56 @@
 
+import { roomService } from "../room/room.service.js";
 import { gameRepository } from "./game.repository.js";
 import { gameService } from "./game.service.js";
 
 export function registerGameSocket(io) {
     io.on("connection", (socket) => {
+
+
+socket.on("game:play-again", async (ack = () => {}) => {
+  try {
+    if (
+      !socket.data.authenticated ||
+      !socket.data.session ||
+      socket.data.isHost !== true
+    ) {
+      return ack({
+        success: false,
+        message: "Only God can restart the game.",
+      });
+    }
+
+    const { roomCode } = socket.data.session;
+
+    // Reset the finished game in the database.
+    const room = await gameService.playAgain(roomCode);
+
+    // Broadcast the updated lobby state to all room members.
+    io.to(roomCode).emit(
+      "room:state",
+      roomService.toPublicRoom(room),
+    );
+
+    // Tell every connected player to navigate back to the lobby.
+    io.to(roomCode).emit("game:play-again", {
+      roomCode,
+    });
+
+    return ack({
+      success: true,
+      message: "The room is ready for a new game.",
+      roomCode,
+    });
+  } catch (error) {
+    console.error("Play again failed:", error);
+
+    return ack({
+      success: false,
+      message: error?.message || "Unable to restart the game.",
+    });
+  }
+});
+
 
         socket.on("game:my-role", async (ack = () => { }) => {
             try {

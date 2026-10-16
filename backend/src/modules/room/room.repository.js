@@ -1,4 +1,3 @@
-
 import prisma from "../../db.js";
 
 export const roomRepository = {
@@ -73,19 +72,25 @@ export const roomRepository = {
     });
   },
 
-deleteExpiredRooms(cutoff) {
-  return prisma.gameRoom.deleteMany({
-    where: {
-      createdAt: {
-        lt: cutoff,
+  deletePlayerById(playerId) {
+    return prisma.player.delete({
+      where: { id: playerId },
+    });
+  },
+
+  deleteExpiredRooms(cutoff) {
+    return prisma.gameRoom.deleteMany({
+      where: {
+        createdAt: {
+          lt: cutoff,
+        },
       },
-    },
-  });
-},
+    });
+  },
 
   deleteRoomById(roomId) {
-  return prisma.gameRoom.delete({
-    where: { id: roomId },
-  });
-},
+    return prisma.gameRoom.delete({
+      where: { id: roomId },
+    });
+  },
 };

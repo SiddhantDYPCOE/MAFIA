@@ -1,5 +1,5 @@
-
 import { timingSafeEqual } from "node:crypto";
+
 import { roomRepository } from "./room.repository.js";
 import {
   generateReconnectSecret,
@@ -11,10 +11,11 @@ function safeEqual(a, b) {
   const left = Buffer.from(a, "hex");
   const right = Buffer.from(b, "hex");
 
-  return (
-    left.length === right.length &&
-    timingSafeEqual(left, right)
-  );
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+function createError(message, statusCode) {
+  return Object.assign(new Error(message), { statusCode });
 }
 
 export const roomService = {
@@ -53,19 +54,15 @@ export const roomService = {
   },
 
   async joinRoom(roomCode, username) {
-    const room = await roomRepository.findByCode(roomCode);
+    const normalizedCode = roomCode.toUpperCase();
+    const room = await roomRepository.findByCode(normalizedCode);
 
     if (!room) {
-      throw Object.assign(new Error("Room not found"), {
-        statusCode: 404,
-      });
+      throw createError("Room not found", 404);
     }
 
     if (room.status !== "LOBBY") {
-      throw Object.assign(
-        new Error("This game has already started"),
-        { statusCode: 409 },
-      );
+      throw createError("This game has already started", 409);
     }
 
     const existing = await roomRepository.findPlayerByUsername(
@@ -74,9 +71,9 @@ export const roomService = {
     );
 
     if (existing) {
-      throw Object.assign(
-        new Error("That username is already taken in this room"),
-        { statusCode: 409 },
+      throw createError(
+        "That username is already taken in this room",
+        409,
       );
     }
 
@@ -98,36 +95,92 @@ export const roomService = {
     };
   },
 
-  async deleteRoom({ roomCode, playerId, reconnectSecret }) {
-  const normalizedCode = roomCode.toUpperCase();
-
-  const session = await this.authenticateSession({
-    roomCode: normalizedCode,
+  async kickPlayer({
+    roomCode,
+    targetPlayerId,
     playerId,
     reconnectSecret,
-  });
+  }) {
+    const normalizedCode = roomCode.toUpperCase();
 
-  const room = await roomRepository.findByCode(normalizedCode);
+   
+    const session = await this.authenticateSession({
+      roomCode: normalizedCode,
+      playerId,
+      reconnectSecret,
+    });
 
-  if (!room) {
-    const error = new Error("Room not found");
-    error.statusCode = 404;
-    throw error;
-  }
+    const room = await roomRepository.findByCode(normalizedCode);
 
-  if (room.hostPlayerId !== session.playerId) {
-    const error = new Error("Only the host can delete this lobby");
-    error.statusCode = 403;
-    throw error;
-  }
+    if (!room) {
+      throw createError("Room not found", 404);
+    }
 
-  await roomRepository.deleteRoomById(room.id);
+    
+    if (
+      room.hostPlayerId !== session.playerId ||
+      !session.isHost
+    ) {
+      throw createError("Only God can kick players", 403);
+    }
 
-  return {
-    roomCode: normalizedCode,
-    message: "Lobby deleted successfully",
-  };
-},
+   
+    if (room.status !== "LOBBY") {
+      throw createError(
+        "Players can only be kicked while the room is in the lobby",
+        409,
+      );
+    }
+
+    const targetPlayer = room.players.find(
+      (player) => player.id === targetPlayerId,
+    );
+
+    if (!targetPlayer) {
+      throw createError("Player not found in this room", 404);
+    }
+
+    if (targetPlayer.isHost || targetPlayer.id === room.hostPlayerId) {
+      throw createError("The host cannot be kicked", 403);
+    }
+
+    await roomRepository.deletePlayerById(targetPlayer.id);
+
+    const updatedRoom = await roomRepository.findByCode(normalizedCode);
+
+    return {
+      room: this.toPublicRoom(updatedRoom),
+      kickedPlayerId: targetPlayer.id,
+      kickedUsername: targetPlayer.username,
+    };
+  },
+
+  async deleteRoom({ roomCode, playerId, reconnectSecret }) {
+    const normalizedCode = roomCode.toUpperCase();
+
+    const session = await this.authenticateSession({
+      roomCode: normalizedCode,
+      playerId,
+      reconnectSecret,
+    });
+
+    const room = await roomRepository.findByCode(normalizedCode);
+
+    if (!room) {
+      throw createError("Room not found", 404);
+    }
+
+    if (room.hostPlayerId !== session.playerId) {
+      throw createError("Only the host can delete this lobby", 403);
+    }
+
+    await roomRepository.deleteRoomById(room.id);
+
+    return {
+      roomCode: normalizedCode,
+      message: "Lobby deleted successfully",
+    };
+  },
 
   async authenticateSession({
     roomCode,
@@ -137,19 +190,17 @@ export const roomService = {
     const player = await roomRepository.findPlayerById(playerId);
 
     if (!player || player.room.code !== roomCode) {
-      throw new Error("Invalid session");
+      throw createError("Invalid session", 401);
     }
 
     const suppliedHash = hashReconnectSecret(reconnectSecret);
 
-    if (
-      !safeEqual(suppliedHash, player.reconnectSecretHash)
-    ) {
-      throw new Error("Invalid session");
+    if (!safeEqual(suppliedHash, player.reconnectSecretHash)) {
+      throw createError("Invalid session", 401);
     }
 
     if (player.room.status === "FINISHED") {
-      throw new Error("This game has ended");
+      throw createError("This game has ended", 409);
     }
 
     return {
@@ -171,15 +222,28 @@ export const roomService = {
     };
   },
 
-  toPublicRoom(room) {
-    return {
-      id: room.id,
-      code: room.code,
-      status: room.status,
-      hostPlayerId: room.hostPlayerId,
-      players: room.players.map((player) =>
-        this.toPublicPlayer(player),
-      ),
-    };
-  },
+  // toPublicRoom(room) {
+  //   return {
+  //     id: room.id,
+  //     code: room.code,
+  //     status: room.status,
+  //     hostPlayerId: room.hostPlayerId,
+  //     players: room.players.map((player) => this.toPublicPlayer(player)),
+  //   };
+  // },
+  
+toPublicRoom(room) {
+  return {
+    id: room.id,
+    code: room.code,
+    status: room.status,
+    phase: room.phase,
+    currentRoundNumber: room.currentRoundNumber,
+    hostPlayerId: room.hostPlayerId,
+    players: room.players.map((player) =>
+      this.toPublicPlayer(player),
+    ),
+  };
+},
+
 };

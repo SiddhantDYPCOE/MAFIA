@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -8,8 +9,9 @@ import {
   Target,
   Sun,
   Search,
-  Skull,
   Trophy,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { connectPlayerSocket } from "../services/socket";
 
@@ -56,8 +58,13 @@ function WinnerPanel({ result, players }) {
   return (
     <section className="mt-6 border border-amber-400/30 bg-neutral-900 p-6 text-center">
       <Trophy className="mx-auto text-amber-300" size={40} />
+
       <p className="mt-4 text-sm text-neutral-500">Game over</p>
-      <h2 className="mt-1 text-3xl font-bold sm:text-4xl">{title}</h2>
+
+      <h2 className="mt-1 text-3xl font-bold sm:text-4xl">
+        {title}
+      </h2>
+
       <p className="mt-3 text-neutral-400">
         {result?.reason ?? "The game has ended."}
       </p>
@@ -67,6 +74,7 @@ function WinnerPanel({ result, players }) {
           <p className="text-sm font-semibold text-neutral-300">
             {winner === "MAFIA" ? "Mafia team" : "Civilian team"}
           </p>
+
           <div className="mt-3 flex flex-wrap justify-center gap-2">
             {winningPlayers.map((player) => (
               <span
@@ -81,6 +89,10 @@ function WinnerPanel({ result, players }) {
       )}
 
       <div className="mt-6 border border-neutral-800 text-left">
+        <p className="border-b border-neutral-800 bg-neutral-950 px-3 py-3 text-sm font-semibold text-neutral-300">
+          Final roles
+        </p>
+
         {(players ?? [])
           .filter((player) => !player.isHost)
           .map((player) => (
@@ -97,6 +109,7 @@ function WinnerPanel({ result, players }) {
               >
                 {player.username}
               </span>
+
               <span className="text-sm text-neutral-400">
                 {player.role ?? "Unknown"}
                 {!player.isAlive ? " · Eliminated" : ""}
@@ -122,6 +135,8 @@ export default function PlayerRound() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [lastInvestigation, setLastInvestigation] = useState(null);
+  const [roleVisible, setRoleVisible] = useState(true);
+  const [sessionPlayerId, setSessionPlayerId] = useState("");
 
   const [votingPrivate, setVotingPrivate] = useState(null);
   const [voteTarget, setVoteTarget] = useState("");
@@ -135,18 +150,83 @@ export default function PlayerRound() {
     let nightTimer;
     let votingTimer;
 
+    const clearGameTimers = () => {
+      clearTimeout(nightTimer);
+      clearTimeout(votingTimer);
+    };
+
+const handleGameRestart = (payload) => {
+  if (!active) return;
+
+  console.log("Received game:play-again event:", payload);
+
+  const targetRoomCode = (
+    payload?.roomCode || roomCode
+  ).toUpperCase();
+
+  clearGameTimers();
+
+  // Clear finished-game state.
+  setState(null);
+  setMyRole(null);
+  setPrivateState(null);
+  setSelectedTarget("");
+  setSubmitting(false);
+  setError("");
+  setMessage("");
+  setLastInvestigation(null);
+  setRoleVisible(true);
+  setVotingPrivate(null);
+  setVoteTarget("");
+  setVoteSubmitting(false);
+  setVotingResult(null);
+  setNightResult(null);
+
+  navigate(`/room/${targetRoomCode}`, { replace: true });
+};
+
     const mergePublicState = (nextState) => {
       if (!active || !nextState) return;
 
-      setState((previous) => ({
-        ...(previous ?? {}),
-        ...nextState,
-        players: nextState.players ?? previous?.players ?? [],
-        gameResult:
-          nextState.gameResult ??
-          previous?.gameResult ??
-          null,
-      }));
+      setState((previous) => {
+        const merged = {
+          ...(previous ?? {}),
+          ...nextState,
+          players: nextState.players ?? previous?.players ?? [],
+          gameResult: Object.prototype.hasOwnProperty.call(
+            nextState,
+            "gameResult",
+          )
+            ? nextState.gameResult
+            : previous?.gameResult ?? null,
+        };
+
+        // If the server sends the reset lobby state, clear stale
+        // game-only information before the lobby renders.
+        if (
+          merged.phase === "LOBBY" &&
+          previous?.phase === "FINISHED"
+        ) {
+          merged.gameResult = null;
+          merged.nightState = null;
+          merged.nightStep = null;
+
+          clearGameTimers();
+
+          setMyRole(null);
+          setPrivateState(null);
+          setSelectedTarget("");
+          setLastInvestigation(null);
+          setVotingPrivate(null);
+          setVoteTarget("");
+          setVotingResult(null);
+          setNightResult(null);
+          setMessage("");
+          setRoleVisible(true);
+        }
+
+        return merged;
+      });
     };
 
     try {
@@ -157,7 +237,20 @@ export default function PlayerRound() {
         return;
       }
 
-      currentSocket = connectPlayerSocket(JSON.parse(raw));
+      const session = JSON.parse(raw);
+
+      if (!session?.playerId) {
+        setError("Your saved session is invalid. Rejoin the room.");
+        return;
+      }
+
+      setSessionPlayerId(session.playerId);
+
+      currentSocket = connectPlayerSocket(session);
+
+      // Important: all connected players listen for the server's
+      // broadcast after God successfully restarts the game.
+      currentSocket.on("game:play-again", handleGameRestart);
 
       currentSocket.on(
         "game:night:public-state",
@@ -168,17 +261,7 @@ export default function PlayerRound() {
         "game:night:phase-changed",
         (data) => {
           if (!active || !data) return;
-
-          setState((previous) =>
-            previous
-              ? {
-                  ...previous,
-                  ...data,
-                  gameResult:
-                    data.gameResult ?? previous.gameResult ?? null,
-                }
-              : previous,
-          );
+          mergePublicState(data);
         },
       );
 
@@ -225,7 +308,7 @@ export default function PlayerRound() {
         clearTimeout(votingTimer);
         setVotingResult(result);
 
-        // Keep the tie result available while God chooses a resolution.
+        // Keep a tie visible until God resolves it.
         if (result.outcome !== "TIE") {
           votingTimer = setTimeout(() => {
             if (active) setVotingResult(null);
@@ -235,9 +318,11 @@ export default function PlayerRound() {
 
       currentSocket.on("game:voting:revote-started", () => {
         if (!active) return;
+
         setVotingResult(null);
         setVoteTarget("");
         setVoteSubmitting(false);
+        setVotingPrivate(null);
       });
 
       currentSocket.on("connect", () => {
@@ -246,7 +331,9 @@ export default function PlayerRound() {
         setError("");
 
         currentSocket.emit("game:night:get-state", (response) => {
-          if (active && !response?.success) {
+          if (!active) return;
+
+          if (!response?.success) {
             setError(
               response?.message || "Unable to restore game state.",
             );
@@ -258,16 +345,22 @@ export default function PlayerRound() {
 
           if (response?.success) {
             setMyRole(response.role);
+          } else {
+            setMyRole(null);
           }
         });
       });
 
       currentSocket.on("connect_error", (err) => {
-        if (active) setError(err.message || "Connection failed.");
+        if (active) {
+          setError(err.message || "Connection failed.");
+        }
       });
 
       currentSocket.on("disconnect", () => {
-        if (active) setError("Connection lost. Reconnecting...");
+        if (active) {
+          setError("Connection lost. Reconnecting...");
+        }
       });
 
       setSocket(currentSocket);
@@ -279,18 +372,24 @@ export default function PlayerRound() {
 
     return () => {
       active = false;
-      clearTimeout(nightTimer);
-      clearTimeout(votingTimer);
+      clearGameTimers();
+
       currentSocket?.removeAllListeners();
       currentSocket?.disconnect();
     };
-  }, [roomCode]);
+  }, [roomCode, navigate]);
 
   const votingStatus =
     votingPrivate?.votingStatus ?? votingPrivate?.status;
 
   const isFinished =
     state?.phase === "FINISHED" || Boolean(state?.gameResult);
+
+  const players = state?.players ?? [];
+
+  const currentPlayer = players.find(
+    (player) => player.id === sessionPlayerId,
+  );
 
   function submitVote() {
     if (
@@ -326,7 +425,7 @@ export default function PlayerRound() {
 
         setVoteSubmitting(false);
         setVotingPrivate((previous) => ({
-          ...previous,
+          ...(previous ?? {}),
           hasVoted: true,
         }));
         setVoteTarget("");
@@ -364,7 +463,9 @@ export default function PlayerRound() {
         }
 
         if (!response?.success) {
-          setError(response?.message || "Could not submit your selection.");
+          setError(
+            response?.message || "Could not submit your selection.",
+          );
           return;
         }
 
@@ -405,7 +506,17 @@ export default function PlayerRound() {
     return (
       <main className="flex min-h-screen items-center justify-center gap-3 bg-neutral-950 p-6 text-neutral-100">
         {error ? (
-          <p className="text-center text-red-300">{error}</p>
+          <div className="text-center">
+            <p className="text-red-300">{error}</p>
+
+            <button
+              type="button"
+              onClick={() => navigate(`/room/${roomCode}`)}
+              className="mt-4 text-sm text-neutral-400 underline hover:text-white"
+            >
+              Return to room
+            </button>
+          </div>
         ) : (
           <>
             <LoaderCircle className="animate-spin" />
@@ -421,7 +532,7 @@ export default function PlayerRound() {
   const isVoting = state.phase === "VOTING";
   const action = roleActions[myRole];
 
-  const alivePlayers = (state.players ?? []).filter(
+  const alivePlayers = players.filter(
     (player) => player.isAlive && !player.isHost,
   );
 
@@ -465,7 +576,7 @@ export default function PlayerRound() {
         )}
 
         {isFinished ? (
-          <WinnerPanel result={state.gameResult} players={state.players} />
+          <WinnerPanel result={state.gameResult} players={players} />
         ) : (
           <>
             <section className="border border-neutral-800 bg-neutral-900 p-6 text-center">
@@ -489,10 +600,49 @@ export default function PlayerRound() {
                 Room {roomCode}
               </p>
 
+              {currentPlayer && (
+                <div className="mt-5">
+                  <p className="text-sm text-neutral-400">
+                    Playing as
+                  </p>
+
+                  <p className="mt-1 text-xl font-semibold text-white">
+                    {currentPlayer.username}
+                  </p>
+                </div>
+              )}
+
               {myRole && (
-                <p className="mt-3 text-sm text-neutral-300">
-                  Your role: {myRole}
-                </p>
+                <div className="mx-auto mt-5 max-w-sm border border-neutral-700 bg-neutral-950 p-4">
+                  <p className="text-xs uppercase tracking-widest text-neutral-500">
+                    Your secret role
+                  </p>
+
+                  <p className="mt-3 text-2xl font-bold tracking-wide">
+                    {roleVisible ? myRole : "••••••••"}
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setRoleVisible((visible) => !visible)
+                    }
+                    aria-pressed={!roleVisible}
+                    className="mx-auto mt-4 flex items-center justify-center gap-2 border border-neutral-700 px-4 py-2 text-sm text-neutral-200 transition hover:bg-neutral-800"
+                  >
+                    {roleVisible ? (
+                      <>
+                        <EyeOff size={16} />
+                        Hide role
+                      </>
+                    ) : (
+                      <>
+                        <Eye size={16} />
+                        Show role
+                      </>
+                    )}
+                  </button>
+                </div>
               )}
 
               {isNight && !canChooseTarget && (
@@ -510,6 +660,7 @@ export default function PlayerRound() {
               {isVoting && !showVotingResults && (
                 <section className="mt-6 border border-neutral-700 bg-neutral-950 p-6 text-left">
                   <h2 className="text-xl font-semibold">Cast your vote</h2>
+
                   <p className="mt-2 text-sm text-neutral-500">
                     Votes are private. No counts are shown until God ends voting.
                   </p>
@@ -552,6 +703,7 @@ export default function PlayerRound() {
                               } disabled:opacity-60`}
                             >
                               <span>{player.username}</span>
+
                               <span className="text-sm text-neutral-400">
                                 {selected ? "Selected" : "Select"}
                               </span>
@@ -571,8 +723,12 @@ export default function PlayerRound() {
                         className="mt-5 flex w-full items-center justify-center gap-2 border border-neutral-100 bg-neutral-100 px-5 py-3 font-semibold text-neutral-950 transition hover:bg-neutral-300 disabled:opacity-50"
                       >
                         {voteSubmitting && (
-                          <LoaderCircle size={18} className="animate-spin" />
+                          <LoaderCircle
+                            size={18}
+                            className="animate-spin"
+                          />
                         )}
+
                         {voteSubmitting ? "Submitting..." : "Submit Vote"}
                       </button>
                     </>
@@ -591,9 +747,11 @@ export default function PlayerRound() {
                           ? "Game finished"
                           : "Voting results"}
                   </h2>
+
                   <p className="mt-2 text-sm text-neutral-500">
                     Final vote counts. Individual votes remain private.
                   </p>
+
                   <div className="mt-4 border border-neutral-800">
                     {(votingResult.counts ?? []).map((candidate) => (
                       <div
@@ -601,6 +759,7 @@ export default function PlayerRound() {
                         className="flex justify-between border-b border-neutral-800 bg-neutral-900 px-3 py-2.5 last:border-b-0"
                       >
                         <span>{candidate.username}</span>
+
                         <span className="font-semibold text-neutral-300">
                           {candidate.count} vote
                           {candidate.count === 1 ? "" : "s"}
@@ -608,6 +767,7 @@ export default function PlayerRound() {
                       </div>
                     ))}
                   </div>
+
                   {votingResult.outcome === "TIE" && (
                     <p className="mt-4 text-sm text-amber-300">
                       God will choose a revote or no elimination.
@@ -629,8 +789,10 @@ export default function PlayerRound() {
                       <Target size={20} />
                     )}
                   </div>
+
                   <div>
                     <h2 className="font-semibold">{action.title}</h2>
+
                     <p className="mt-1 text-sm text-neutral-500">
                       {action.description}
                     </p>
@@ -659,6 +821,7 @@ export default function PlayerRound() {
                         } disabled:opacity-60`}
                       >
                         <span>{player.username}</span>
+
                         <span className="text-sm text-neutral-400">
                           {selected ? "Selected" : "Select"}
                         </span>
@@ -685,8 +848,12 @@ export default function PlayerRound() {
                   className="mt-5 flex w-full items-center justify-center gap-2 border border-neutral-100 bg-neutral-100 px-4 py-3 font-semibold text-neutral-950 transition hover:bg-neutral-300 disabled:opacity-50"
                 >
                   {submitting && (
-                    <LoaderCircle className="animate-spin" size={18} />
+                    <LoaderCircle
+                      className="animate-spin"
+                      size={18}
+                    />
                   )}
+
                   {submitting ? "Submitting..." : action.button}
                 </button>
               </section>
@@ -698,6 +865,7 @@ export default function PlayerRound() {
                   <Search size={18} className="text-neutral-300" />
                   Latest investigation
                 </h2>
+
                 <p
                   className={`mt-3 text-sm ${
                     lastInvestigation.isMafia
@@ -709,6 +877,7 @@ export default function PlayerRound() {
                     ? "Your investigation indicates this player is Mafia."
                     : "Your investigation indicates this player is not Mafia."}
                 </p>
+
                 <p className="mt-2 text-xs text-neutral-500">
                   This information is private to you.
                 </p>
@@ -722,8 +891,9 @@ export default function PlayerRound() {
             <Shield className="text-neutral-400" size={18} />
             Players
           </h2>
+
           <div>
-            {(state.players ?? []).map((player) => (
+            {players.map((player) => (
               <div
                 key={player.id}
                 className="flex items-center justify-between gap-3 border-b border-neutral-800 px-5 py-3 last:border-b-0"
@@ -738,6 +908,7 @@ export default function PlayerRound() {
                   {player.username}
                   {player.isHost ? " (God)" : ""}
                 </span>
+
                 <span className="text-xs text-neutral-500">
                   {isFinished && !player.isHost && player.role
                     ? player.role
@@ -756,23 +927,30 @@ export default function PlayerRound() {
       {nightResult && !isFinished && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/95 px-6 text-center">
           <div className="max-w-lg">
-            {nightResult.eliminatedUsername ? (
-              <Moon className="mx-auto text-red-400" size={40} />
+            {nightResult.announcement === "NO_DEATH" ? (
+              <Shield
+                className="mx-auto text-emerald-400"
+                size={40}
+              />
             ) : (
-              <Shield className="mx-auto text-emerald-400" size={40} />
+              <Moon className="mx-auto text-red-400" size={40} />
             )}
+
             <p className="mt-6 text-sm text-neutral-500">
               Morning has arrived
             </p>
+
             <h2 className="mt-3 text-3xl font-bold sm:text-5xl">
-              {nightResult.eliminatedUsername
-                ? nightResult.eliminatedUsername
-                : "Nobody was eliminated"}
+              {nightResult.announcement === "NO_DEATH"
+                ? "Nobody was eliminated"
+                : nightResult.eliminatedUsername ||
+                  "A dark morning..."}
             </h2>
+
             <p className="mt-5 text-neutral-400">
-              {nightResult.eliminatedUsername
-                ? "Didn't make it to breakfast. Their secrets stay buried... for now."
-                : "The Doctor saved the target. Everyone lives to argue another day."}
+              {nightResult.announcement === "NO_DEATH"
+                ? "The Doctor saved the target. Everyone lives to argue another day."
+                : "Someone didn't make it to breakfast. Their role remains secret."}
             </p>
           </div>
         </div>

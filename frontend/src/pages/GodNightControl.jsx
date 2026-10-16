@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   LoaderCircle,
@@ -13,6 +13,7 @@ import {
   Ban,
   Trophy,
   Clock,
+  Activity,
 } from "lucide-react";
 import { connectPlayerSocket } from "../services/socket";
 
@@ -148,9 +149,8 @@ function TieDecisionPanel({
 
           <p className="mt-2 text-sm leading-6 text-neutral-400">
             The tied players will not be eliminated automatically.
-            Everyone must wait until God chooses whether to hold a
-            revote between the tied players or skip elimination and
-            proceed to the next night.
+            Choose whether to hold a revote between the tied players
+            or skip elimination and proceed to the next night.
           </p>
         </div>
       </div>
@@ -213,6 +213,8 @@ export default function GodNightControl() {
   const roomCode = (paramCode || "").toUpperCase();
   const navigate = useNavigate();
 
+  const activityLogKey = `mafia_activity_log_enabled_${roomCode}`;
+
   const [socket, setSocket] = useState(null);
   const [state, setState] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -221,21 +223,249 @@ export default function GodNightControl() {
   const [votingResult, setVotingResult] = useState(null);
   const [nightResult, setNightResult] = useState(null);
 
+  const [activityLogEnabled, setActivityLogEnabled] = useState(
+    () => localStorage.getItem(activityLogKey) === "true",
+  );
+  const [activityLogs, setActivityLogs] = useState([]);
+
+  const stateRef = useRef(null);
+  const activityLogEnabledRef = useRef(activityLogEnabled);
+
+  const activitySnapshotRef = useRef({
+    initialized: false,
+    phase: null,
+    nightStep: null,
+    mafiaSelections: {},
+    doctorSelection: null,
+    policeSelection: null,
+  });
+
+  // Keep the ref synchronized so socket handlers always read the latest setting.
+  useEffect(() => {
+    activityLogEnabledRef.current = activityLogEnabled;
+  }, [activityLogEnabled]);
+
+  // Synchronize the setting changed on the role-assignment page.
+  useEffect(() => {
+    const syncActivityLogSetting = (event) => {
+      const changedRoomCode = event?.detail?.roomCode;
+
+      if (
+        changedRoomCode &&
+        changedRoomCode !== roomCode
+      ) {
+        return;
+      }
+
+      const enabled =
+        localStorage.getItem(activityLogKey) === "true";
+
+      activityLogEnabledRef.current = enabled;
+      setActivityLogEnabled(enabled);
+
+      if (!enabled) {
+        setActivityLogs([]);
+      }
+    };
+
+    window.addEventListener("focus", syncActivityLogSetting);
+    window.addEventListener("storage", syncActivityLogSetting);
+    window.addEventListener(
+      "mafia-activity-log-setting-changed",
+      syncActivityLogSetting,
+    );
+
+    return () => {
+      window.removeEventListener("focus", syncActivityLogSetting);
+      window.removeEventListener("storage", syncActivityLogSetting);
+      window.removeEventListener(
+        "mafia-activity-log-setting-changed",
+        syncActivityLogSetting,
+      );
+    };
+  }, [activityLogKey, roomCode]);
+
+  // Clear existing entries whenever activity logging is disabled.
+  useEffect(() => {
+    if (!activityLogEnabled) {
+      setActivityLogs([]);
+    }
+  }, [activityLogEnabled]);
+
+  const addActivityLog = useCallback((message) => {
+    if (!activityLogEnabledRef.current) return;
+
+    setActivityLogs((previous) =>
+      [
+        ...previous,
+        {
+          id: `${Date.now()}-${previous.length}`,
+          message,
+          time: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          }),
+        },
+      ].slice(-100),
+    );
+  }, []);
+
+  // Initialize the socket and listen for game-state updates.
   useEffect(() => {
     let active = true;
     let currentSocket;
     let nightTimer;
     let votingTimer;
 
+    const resetActivitySnapshot = () => {
+      activitySnapshotRef.current = {
+        initialized: false,
+        phase: null,
+        nightStep: null,
+        mafiaSelections: {},
+        doctorSelection: null,
+        policeSelection: null,
+      };
+    };
+
     const mergeState = (next) => {
       if (!active || !next) return;
 
-      setState((previous) => ({
+      const previous = stateRef.current;
+
+      const merged = {
         ...(previous ?? {}),
         ...next,
         players: next.players ?? previous?.players ?? [],
-        gameResult: next.gameResult ?? previous?.gameResult ?? null,
-      }));
+        gameResult: Object.prototype.hasOwnProperty.call(
+          next,
+          "gameResult",
+        )
+          ? next.gameResult
+          : previous?.gameResult ?? null,
+      };
+
+      // A fresh lobby must not inherit the previous game's state.
+      if (merged.phase === "LOBBY" && previous?.phase !== "LOBBY") {
+        merged.gameResult = null;
+        merged.nightStep = null;
+        merged.nightState = null;
+        merged.round = 0;
+
+        setVotingProgress(null);
+        setVotingResult(null);
+        setNightResult(null);
+
+        clearTimeout(nightTimer);
+        clearTimeout(votingTimer);
+
+        resetActivitySnapshot();
+      }
+
+      stateRef.current = merged;
+
+      const nightState = merged.nightState ?? {};
+      const snapshot = activitySnapshotRef.current;
+
+      const mafiaSelections = nightState.mafiaSelections ?? {};
+      const doctorSelection = nightState.doctorSelection ?? null;
+      const policeSelection = nightState.policeSelection ?? null;
+
+      const getName = (playerId) =>
+        merged.players.find((player) => player.id === playerId)
+          ?.username ?? "Unknown player";
+
+      // Don't log old selections when first restoring the page.
+      if (!snapshot.initialized) {
+        activitySnapshotRef.current = {
+          initialized: true,
+          phase: merged.phase ?? null,
+          nightStep: merged.nightStep ?? null,
+          mafiaSelections: { ...mafiaSelections },
+          doctorSelection,
+          policeSelection,
+        };
+
+        setState(merged);
+        return;
+      }
+
+      if (
+        merged.phase === "NIGHT" &&
+        snapshot.phase !== "NIGHT"
+      ) {
+        addActivityLog("🌙 Everyone has gone to sleep.");
+      }
+
+      if (
+        merged.nightStep === "NIGHT_END" &&
+        snapshot.nightStep !== "NIGHT_END"
+      ) {
+        addActivityLog("☀️ Morning has arrived.");
+      }
+
+      for (const [mafiaPlayerId, targetId] of Object.entries(
+        mafiaSelections,
+      )) {
+        if (snapshot.mafiaSelections[mafiaPlayerId] !== targetId) {
+          addActivityLog(
+            `🔪 ${getName(mafiaPlayerId)} selected ${getName(targetId)} as the target.`,
+          );
+        }
+      }
+
+      if (
+        doctorSelection &&
+        doctorSelection !== snapshot.doctorSelection
+      ) {
+        addActivityLog(
+          `🩺 The Doctor has chosen ${getName(doctorSelection)} to protect.`,
+        );
+      }
+
+      if (
+        policeSelection &&
+        policeSelection !== snapshot.policeSelection
+      ) {
+        addActivityLog(
+          `🔍 The Police has investigated ${getName(policeSelection)}.`,
+        );
+      }
+
+      activitySnapshotRef.current = {
+        initialized: true,
+        phase: merged.phase ?? snapshot.phase,
+        nightStep: merged.nightStep ?? snapshot.nightStep,
+        mafiaSelections: { ...mafiaSelections },
+        doctorSelection,
+        policeSelection,
+      };
+
+      setState(merged);
+    };
+
+    const handleGameRestart = (payload) => {
+      if (!active) return;
+
+      const targetRoomCode = (
+        payload?.roomCode || roomCode
+      ).toUpperCase();
+
+      clearTimeout(nightTimer);
+      clearTimeout(votingTimer);
+
+      setBusy(false);
+      setError("");
+      setVotingProgress(null);
+      setVotingResult(null);
+      setNightResult(null);
+      setActivityLogs([]);
+
+      stateRef.current = null;
+      resetActivitySnapshot();
+
+      navigate(`/room/${targetRoomCode}`);
     };
 
     try {
@@ -250,23 +480,24 @@ export default function GodNightControl() {
 
       currentSocket.on("game:night:god-state", mergeState);
       currentSocket.on("game:night:public-state", mergeState);
-
-      currentSocket.on("game:night:phase-changed", (data) => {
-        if (!active || !data) return;
-
-        setState((previous) => ({
-          ...(previous ?? {}),
-          ...data,
-          players: data.players ?? previous?.players ?? [],
-          gameResult: data.gameResult ?? previous?.gameResult ?? null,
-        }));
-      });
+      currentSocket.on("game:night:phase-changed", mergeState);
+      currentSocket.on("game:play-again", handleGameRestart);
 
       currentSocket.on("game:night:result", (result) => {
         if (!active || !result) return;
 
         clearTimeout(nightTimer);
         setNightResult(result);
+
+        if (result.announcement === "NO_DEATH") {
+          addActivityLog(
+            "☀️ Morning arrived. Nobody was eliminated during the night.",
+          );
+        } else {
+          addActivityLog(
+            `☀️ Morning arrived. ${result.eliminatedUsername || "Someone"} was eliminated.`,
+          );
+        }
 
         nightTimer = setTimeout(() => {
           if (active) setNightResult(null);
@@ -313,11 +544,15 @@ export default function GodNightControl() {
       });
 
       currentSocket.on("connect_error", (err) => {
-        if (active) setError(err.message || "Connection failed.");
+        if (active) {
+          setError(err.message || "Connection failed.");
+        }
       });
 
       currentSocket.on("disconnect", () => {
-        if (active) setError("Connection lost. Reconnecting...");
+        if (active) {
+          setError("Connection lost. Reconnecting...");
+        }
       });
 
       setSocket(currentSocket);
@@ -334,7 +569,7 @@ export default function GodNightControl() {
       currentSocket?.removeAllListeners();
       currentSocket?.disconnect();
     };
-  }, [roomCode]);
+  }, [roomCode, navigate, addActivityLog]);
 
   function sendAction(eventName, payload) {
     if (
@@ -378,6 +613,36 @@ export default function GodNightControl() {
     }
   }
 
+  function handlePlayAgain() {
+    if (!socket?.connected || busy) {
+      setError("Not connected to the server. Please wait and try again.");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+
+    socket.timeout(10000).emit(
+      "game:play-again",
+      (timeoutError, response) => {
+        if (timeoutError) {
+          setBusy(false);
+          setError("The server did not respond. Please try again.");
+          return;
+        }
+
+        if (!response?.success) {
+          setBusy(false);
+          setError(response?.message || "Unable to restart the game.");
+          return;
+        }
+
+        // Fallback navigation if the broadcast hasn't navigated the host.
+        navigate(`/room/${roomCode}`);
+      },
+    );
+  }
+
   if (!state) {
     return (
       <main className="flex min-h-screen items-center justify-center gap-3 bg-neutral-950 p-6 text-neutral-100">
@@ -406,13 +671,16 @@ export default function GodNightControl() {
   const isFinished =
     state.phase === "FINISHED" || Boolean(state.gameResult);
 
-  const isPreNight = ["LOBBY", "ROLE_ASSIGNMENT"].includes(state.phase);
+  const isPreNight = ["LOBBY", "ROLE_ASSIGNMENT"].includes(
+    state.phase,
+  );
   const isNight = state.phase === "NIGHT";
   const isDiscussion = state.phase === "DISCUSSION";
   const isVoting = state.phase === "VOTING";
 
   const prompt = prompts[state.nightStep];
   const nightState = state.nightState ?? {};
+
   const mafiaSelections = Object.entries(
     nightState.mafiaSelections ?? {},
   );
@@ -444,7 +712,9 @@ export default function GodNightControl() {
 
   const submitted = Number(votingProgress?.votesSubmitted ?? 0);
   const eligible = Number(votingProgress?.totalEligible ?? 0);
-  const allVotesSubmitted = eligible > 0 && submitted >= eligible;
+
+  const allVotesSubmitted =
+    eligible > 0 && submitted >= eligible;
 
   const finalCounts =
     votingResult?.counts ??
@@ -466,7 +736,9 @@ export default function GodNightControl() {
               : `Night ${state.round || 1}`}
         </h1>
 
-        <p className="mt-2 text-neutral-500">Room: {roomCode}</p>
+        <p className="mt-2 text-neutral-500">
+          Room: {roomCode}
+        </p>
 
         {error && (
           <p
@@ -477,8 +749,27 @@ export default function GodNightControl() {
           </p>
         )}
 
+        {isFinished && (
+          <button
+            type="button"
+            disabled={busy || !socket?.connected}
+            onClick={handlePlayAgain}
+            className="mt-6 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {busy ? (
+              <LoaderCircle className="animate-spin" size={18} />
+            ) : (
+              <RefreshCw size={18} />
+            )}
+            {busy ? "Restarting game..." : "Play Again"}
+          </button>
+        )}
+
         {isFinished ? (
-          <WinnerPanel result={state.gameResult} players={state.players} />
+          <WinnerPanel
+            result={state.gameResult}
+            players={state.players}
+          />
         ) : (
           <section className="mt-8 border border-neutral-800 bg-neutral-900 p-6 sm:p-8">
             <div className="flex items-center gap-3">
@@ -489,10 +780,55 @@ export default function GodNightControl() {
               )}
 
               <div>
-                <p className="text-sm text-neutral-500">Current phase</p>
+                <p className="text-sm text-neutral-500">
+                  Current phase
+                </p>
                 <p className="font-semibold">{state.phase}</p>
               </div>
             </div>
+
+            {activityLogEnabled && (
+              <div className="mt-6 border border-neutral-800 bg-neutral-950">
+                <div className="flex items-center justify-between gap-3 border-b border-neutral-800 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <Activity
+                      size={18}
+                      className="text-emerald-400"
+                    />
+                    <h3 className="font-semibold">
+                      God activity log
+                    </h3>
+                  </div>
+
+                  <span className="text-xs text-neutral-500">
+                    {activityLogs.length} events
+                  </span>
+                </div>
+
+                <div className="max-h-64 space-y-3 overflow-y-auto p-4">
+                  {activityLogs.length === 0 ? (
+                    <p className="text-sm text-neutral-500">
+                      Waiting for game activity...
+                    </p>
+                  ) : (
+                    activityLogs.map((entry) => (
+                      <div
+                        key={entry.id}
+                        className="flex gap-3 text-sm"
+                      >
+                        <span className="shrink-0 pt-0.5 text-xs text-neutral-600">
+                          {entry.time}
+                        </span>
+
+                        <p className="text-neutral-300">
+                          {entry.message}
+                        </p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
 
             {isPreNight && (
               <>
@@ -534,20 +870,22 @@ export default function GodNightControl() {
                     {state.nightStep === "MAFIA_CHOOSE" ? (
                       mafiaSelections.length > 0 ? (
                         <div className="mt-3 space-y-2">
-                          {mafiaSelections.map(([playerId, targetId]) => (
-                            <div
-                              key={playerId}
-                              className="flex justify-between gap-3 text-sm"
-                            >
-                              <span className="text-neutral-500">
-                                {getPlayerName(playerId)}
-                              </span>
+                          {mafiaSelections.map(
+                            ([playerId, targetId]) => (
+                              <div
+                                key={playerId}
+                                className="flex justify-between gap-3 text-sm"
+                              >
+                                <span className="text-neutral-500">
+                                  {getPlayerName(playerId)}
+                                </span>
 
-                              <span className="text-neutral-200">
-                                → {getPlayerName(targetId)}
-                              </span>
-                            </div>
-                          ))}
+                                <span className="text-neutral-200">
+                                  → {getPlayerName(targetId)}
+                                </span>
+                              </div>
+                            ),
+                          )}
                         </div>
                       ) : (
                         <p className="mt-3 text-sm text-amber-300">
@@ -579,7 +917,10 @@ export default function GodNightControl() {
                   className="mt-6 flex w-full items-center justify-center gap-2 border border-neutral-100 bg-neutral-100 px-5 py-3 font-semibold text-neutral-950 transition hover:bg-neutral-300 disabled:opacity-50"
                 >
                   {busy && (
-                    <LoaderCircle className="animate-spin" size={18} />
+                    <LoaderCircle
+                      className="animate-spin"
+                      size={18}
+                    />
                   )}
 
                   {busy ? "Please wait..." : prompt.button}
@@ -594,8 +935,8 @@ export default function GodNightControl() {
                 </h2>
 
                 <p className="mt-3 text-neutral-500">
-                  Let the players discuss. Start voting when everyone is
-                  ready.
+                  Let the players discuss. Start voting when everyone
+                  is ready.
                 </p>
 
                 <button
@@ -663,39 +1004,45 @@ export default function GodNightControl() {
                       </p>
                     </div>
 
-                    <h3 className="mt-6 font-semibold">Live vote tally</h3>
+                    <h3 className="mt-6 font-semibold">
+                      Live vote tally
+                    </h3>
 
                     <div className="mt-3 space-y-2">
-                      {(votingProgress?.counts ?? []).map((candidate) => (
-                        <div
-                          key={candidate.playerId}
-                          className="border border-neutral-800 bg-neutral-950 p-4"
-                        >
-                          <div className="flex justify-between gap-4">
-                            <span>{candidate.username}</span>
+                      {(votingProgress?.counts ?? []).map(
+                        (candidate) => (
+                          <div
+                            key={candidate.playerId}
+                            className="border border-neutral-800 bg-neutral-950 p-4"
+                          >
+                            <div className="flex justify-between gap-4">
+                              <span>{candidate.username}</span>
 
-                            <span className="font-semibold text-neutral-300">
-                              {candidate.count}
-                            </span>
-                          </div>
+                              <span className="font-semibold text-neutral-300">
+                                {candidate.count}
+                              </span>
+                            </div>
 
-                          <div className="mt-3 h-1.5 bg-neutral-800">
-                            <div
-                              className="h-1.5 bg-neutral-100"
-                              style={{
-                                width: `${
-                                  submitted
-                                    ? Math.min(
-                                        100,
-                                        (candidate.count / submitted) * 100,
-                                      )
-                                    : 0
-                                }%`,
-                              }}
-                            />
+                            <div className="mt-3 h-1.5 bg-neutral-800">
+                              <div
+                                className="h-1.5 bg-neutral-100"
+                                style={{
+                                  width: `${
+                                    submitted
+                                      ? Math.min(
+                                          100,
+                                          (candidate.count /
+                                            submitted) *
+                                            100,
+                                        )
+                                      : 0
+                                  }%`,
+                                }}
+                              />
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ),
+                      )}
                     </div>
 
                     <button
@@ -732,41 +1079,44 @@ export default function GodNightControl() {
                   />
                 )}
 
-                {votingResult && votingResult.outcome !== "TIE" && (
-                  <div className="mt-6 border border-neutral-700 bg-neutral-950 p-5">
-                    <h3 className="text-lg font-semibold">
-                      {votingResult.outcome === "GAME_OVER"
-                        ? "Game finished"
-                        : votingResult.outcome === "ELIMINATED"
-                          ? `${votingResult.eliminatedUsername} was eliminated`
-                          : "No elimination"}
-                    </h3>
+                {votingResult &&
+                  votingResult.outcome !== "TIE" && (
+                    <div className="mt-6 border border-neutral-700 bg-neutral-950 p-5">
+                      <h3 className="text-lg font-semibold">
+                        {votingResult.outcome === "GAME_OVER"
+                          ? "Game finished"
+                          : votingResult.outcome === "ELIMINATED"
+                            ? `${votingResult.eliminatedUsername} was eliminated`
+                            : "No elimination"}
+                      </h3>
 
-                    {finalCounts.length > 0 && (
-                      <div className="mt-4 border border-neutral-800">
-                        {finalCounts.map((candidate) => (
-                          <div
-                            key={candidate.playerId}
-                            className="flex justify-between border-b border-neutral-800 bg-neutral-900 px-3 py-2.5 last:border-b-0"
-                          >
-                            <span>{candidate.username}</span>
+                      {finalCounts.length > 0 && (
+                        <div className="mt-4 border border-neutral-800">
+                          {finalCounts.map((candidate) => (
+                            <div
+                              key={candidate.playerId}
+                              className="flex justify-between border-b border-neutral-800 bg-neutral-900 px-3 py-2.5 last:border-b-0"
+                            >
+                              <span>{candidate.username}</span>
 
-                            <span className="text-neutral-300">
-                              {candidate.count}{" "}
-                              {candidate.count === 1 ? "vote" : "votes"}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                              <span className="text-neutral-300">
+                                {candidate.count}{" "}
+                                {candidate.count === 1
+                                  ? "vote"
+                                  : "votes"}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
 
-                    {votingResult.gameResult && (
-                      <p className="mt-4 text-amber-300">
-                        {votingResult.gameResult.reason}
-                      </p>
-                    )}
-                  </div>
-                )}
+                      {votingResult.gameResult && (
+                        <p className="mt-4 text-amber-300">
+                          {votingResult.gameResult.reason}
+                        </p>
+                      )}
+                    </div>
+                  )}
               </div>
             )}
           </section>
@@ -785,7 +1135,9 @@ export default function GodNightControl() {
             >
               <span
                 className={
-                  player.isAlive ? "" : "text-neutral-500 line-through"
+                  player.isAlive
+                    ? ""
+                    : "text-neutral-500 line-through"
                 }
               >
                 {player.username}
@@ -815,7 +1167,10 @@ export default function GodNightControl() {
                 size={44}
               />
             ) : (
-              <Skull className="mx-auto text-red-400" size={44} />
+              <Skull
+                className="mx-auto text-red-400"
+                size={44}
+              />
             )}
 
             <p className="mt-6 text-sm text-neutral-500">

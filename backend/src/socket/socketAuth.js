@@ -5,7 +5,6 @@ export async function socketAuth(socket, next) {
   try {
     const auth = socket.handshake.auth ?? {};
 
-    // Allow unauthenticated connections for room:join.
     if (
       !auth.roomCode &&
       !auth.playerId &&

@@ -1,4 +1,3 @@
-
 import { roomService } from "./room.service.js";
 import { roomRepository } from "./room.repository.js";
 
@@ -76,20 +75,39 @@ export const roomController = {
     }
   },
 
-  async delete(req, res, next) {
-  try {
-    const result = await roomService.deleteRoom({
-      roomCode: req.params.roomCode,
-      playerId: req.body.playerId,
-      reconnectSecret: req.body.reconnectSecret,
-    });
+  async kickPlayer(req, res, next) {
+    try {
+      const result = await roomService.kickPlayer({
+        roomCode: req.validated.params.roomCode,
+        targetPlayerId: req.validated.params.targetPlayerId,
+        playerId: req.validated.body.playerId,
+        reconnectSecret: req.validated.body.reconnectSecret,
+      });
 
-    return res.status(200).json({
-      success: true,
-      data: result,
-    });
-  } catch (error) {
-    next(error);
-  }
-},
+      return res.status(200).json({
+        success: true,
+        message: "Player removed from the lobby",
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async delete(req, res, next) {
+    try {
+      const result = await roomService.deleteRoom({
+        roomCode: req.params.roomCode,
+        playerId: req.body.playerId,
+        reconnectSecret: req.body.reconnectSecret,
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
 };

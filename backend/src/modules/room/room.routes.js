@@ -1,5 +1,5 @@
-
 import { Router } from "express";
+import { z } from "zod";
 
 import { roomController } from "./room.controller.js";
 import {
@@ -38,14 +38,34 @@ router.post(
 router.get(
   "/:roomCode",
   validate(
-    (await import("zod")).z.object({
-      roomCode: (await import("zod")).z.string().trim().toUpperCase().length(8),
+    z.object({
+      roomCode: z.string().trim().toUpperCase().length(8),
     }),
     "params",
   ),
   roomController.getRoom,
 );
 
+// God kicks a player from the lobby
+router.delete(
+  "/:roomCode/players/:targetPlayerId",
+  validate(
+    z.object({
+      roomCode: z.string().trim().toUpperCase().length(8),
+      targetPlayerId: z.string().min(1),
+    }),
+    "params",
+  ),
+  validate(
+    z.object({
+      playerId: z.string().min(1),
+      reconnectSecret: z.string().min(1),
+    }),
+  ),
+  roomController.kickPlayer,
+);
+
+// Delete the entire lobby
 router.delete(
   "/:roomCode",
   validate(deleteRoomSchema),
@@ -53,4 +73,3 @@ router.delete(
 );
 
 export default router;
-

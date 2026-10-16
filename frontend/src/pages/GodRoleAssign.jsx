@@ -9,6 +9,7 @@ import {
   LoaderCircle,
   CheckCircle2,
   AlertCircle,
+  Activity,
 } from "lucide-react";
 
 import api from "../services/api";
@@ -30,6 +31,30 @@ const roleLabels = {
 
 export default function GodRoleAssign() {
   const { roomCode } = useParams();
+
+  const activityLogKey = `mafia_activity_log_enabled_${(roomCode || "").toUpperCase()}`;
+
+  const [activityLogEnabled, setActivityLogEnabled] = useState(
+    () => localStorage.getItem(activityLogKey) === "true",
+  );
+
+  function toggleActivityLog() {
+    const next = !activityLogEnabled;
+
+    localStorage.setItem(activityLogKey, String(next));
+
+    setActivityLogEnabled(next);
+
+    // Notify other components in the same browser tab.
+    window.dispatchEvent(
+      new CustomEvent("mafia-activity-log-setting-changed", {
+        detail: {
+          roomCode: (roomCode || "").toUpperCase(),
+          enabled: next,
+        },
+      }),
+    );
+  }
 
   const [rolesAssigned, setRolesAssigned] = useState(false);
   const [gameStarted, setGameStarted] = useState(false);
@@ -58,17 +83,17 @@ export default function GodRoleAssign() {
 
   const isHost = Boolean(
     session &&
-      room &&
-      (
-        room.hostPlayerId === session.playerId ||
-        hostPlayer?.id === session.playerId
-      )
+    room &&
+    (
+      room.hostPlayerId === session.playerId ||
+      hostPlayer?.id === session.playerId
+    )
   );
 
   const hostStatusKnown = Boolean(
     session &&
-      room &&
-      (room.hostPlayerId || hostPlayer)
+    room &&
+    (room.hostPlayerId || hostPlayer)
   );
   const refreshRoom = useCallback(async () => {
     try {
@@ -95,7 +120,7 @@ export default function GodRoleAssign() {
     }
 
     if (!isHost) {
-      navigate(`/room/${roomCode}/reveal`, { replace: true });
+      navigate(`/room/${roomCode}`, { replace: true });
     }
   }, [
     loading,
@@ -197,8 +222,8 @@ export default function GodRoleAssign() {
         if (active) {
           setError(
             err.response?.data?.message ||
-              err.message ||
-              "Failed to initialize the game.",
+            err.message ||
+            "Failed to initialize the game.",
           );
         }
       } finally {
@@ -416,9 +441,8 @@ export default function GodRoleAssign() {
 
           <div className="flex items-center gap-2 border border-neutral-800 bg-neutral-900 px-4 py-2 text-sm text-neutral-300">
             <span
-              className={`h-2 w-2 ${
-                socket?.connected ? "bg-emerald-400" : "bg-amber-400"
-              }`}
+              className={`h-2 w-2 ${socket?.connected ? "bg-emerald-400" : "bg-amber-400"
+                }`}
             />
             {socket?.connected ? "Connected" : "Connecting"}
           </div>
@@ -443,6 +467,43 @@ export default function GodRoleAssign() {
         {isHost ? (
           <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
             <section className="border border-neutral-800 bg-neutral-900 p-6">
+              <div className="mb-6 flex items-center justify-between gap-4 border border-neutral-800 bg-neutral-950 p-4">
+                <div className="flex items-start gap-3">
+                  <Activity
+                    size={20}
+                    className={
+                      activityLogEnabled
+                        ? "mt-0.5 text-emerald-400"
+                        : "mt-0.5 text-neutral-500"
+                    }
+                  />
+
+                  <div>
+                    <p className="font-semibold">God activity log</p>
+
+                    <p className="mt-1 text-sm text-neutral-500">
+                      {activityLogEnabled
+                        ? "Activity logging is enabled for your God screen."
+                        : "Activity logging is disabled. Events won't be displayed."}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={activityLogEnabled}
+                  onClick={toggleActivityLog}
+                  className={`relative h-7 w-12 shrink-0 transition ${activityLogEnabled ? "bg-emerald-500" : "bg-neutral-700"
+                    }`}
+                  aria-label="Toggle God activity log"
+                >
+                  <span
+                    className={`absolute top-1 h-5 w-5 bg-white transition-all ${activityLogEnabled ? "left-6" : "left-1"
+                      }`}
+                  />
+                </button>
+              </div>
               <div className="mb-6 flex items-center gap-3">
                 <Shield className="text-neutral-300" size={22} />
                 <div>
@@ -581,11 +642,10 @@ export default function GodRoleAssign() {
                     </div>
 
                     <span
-                      className={`border px-2 py-0.5 text-xs ${
-                        player.isConnected
+                      className={`border px-2 py-0.5 text-xs ${player.isConnected
                           ? "border-emerald-500/40 text-emerald-400"
                           : "border-neutral-700 text-neutral-500"
-                      }`}
+                        }`}
                     >
                       {player.isConnected ? "Online" : "Offline"}
                     </span>
@@ -602,46 +662,7 @@ export default function GodRoleAssign() {
           </div>
         ) : (
           <section className="mx-auto max-w-xl border border-neutral-800 bg-neutral-900 p-8 text-center">
-            <Shield size={30} className="mx-auto text-neutral-300" />
-
-            <h2 className="mt-5 text-xl font-semibold">
-              Your secret role
-            </h2>
-
-            <p className="mt-2 text-sm text-neutral-500">
-              Only your authenticated session can retrieve your role.
-            </p>
-
-            {!revealed ? (
-              <button
-                onClick={revealMyRole}
-                disabled={busy || !socket?.connected}
-                className="mt-7 flex w-full items-center justify-center gap-2 border border-neutral-100 bg-neutral-100 px-4 py-3 font-semibold text-neutral-950 transition hover:bg-neutral-300 disabled:opacity-50"
-              >
-                {busy ? (
-                  <LoaderCircle className="animate-spin" size={18} />
-                ) : (
-                  <Eye size={18} />
-                )}
-                Reveal my role
-              </button>
-            ) : (
-              <div className="mt-7 border border-neutral-700 bg-neutral-950 p-6">
-                <p className="text-sm text-neutral-400">You are</p>
-                <p className="mt-2 text-3xl font-bold">
-                  {roleLabels[myRole] ?? myRole}
-                </p>
-                <p className="mt-3 text-sm text-neutral-500">
-                  Status: {isAlive ? "Alive" : "Eliminated"}
-                </p>
-                <button
-                  onClick={() => setRevealed(false)}
-                  className="mt-5 text-sm text-neutral-400 underline hover:text-white"
-                >
-                  Hide role on screen
-                </button>
-              </div>
-            )}
+            
           </section>
         )}
       </div>

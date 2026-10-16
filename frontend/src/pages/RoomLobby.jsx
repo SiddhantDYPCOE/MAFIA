@@ -18,10 +18,15 @@ import {
   Wifi,
   WifiOff,
   Swords,
+  UserX,
 } from "lucide-react";
 
 import { connectPlayerSocket } from "../services/socket";
-import { deleteRoom, getRoom } from "../services/room.api";
+import {
+  deleteRoom,
+  getRoom,
+  kickPlayer,
+} from "../services/room.api";
 
 export default function RoomLobby() {
   const { roomCode: routeRoomCode } = useParams();
@@ -40,13 +45,20 @@ export default function RoomLobby() {
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(!location.state?.room);
   const [deleting, setDeleting] = useState(false);
+  const [kickingPlayerId, setKickingPlayerId] = useState(null);
   const [error, setError] = useState("");
   const [socketStatus, setSocketStatus] = useState("connecting");
 
   const players = room?.players ?? [];
   const host = players.find((player) => player.isHost);
-  const isHost = Boolean(currentPlayer?.isHost);
-  const gameStarted = room?.phase === "ROLE_ASSIGNMENT" ||
+
+  const isHost = Boolean(
+    currentPlayer?.isHost ||
+      (currentPlayer?.id && room?.hostPlayerId === currentPlayer.id),
+  );
+
+  const gameStarted =
+    room?.phase === "ROLE_ASSIGNMENT" ||
     room?.phase === "NIGHT" ||
     room?.phase === "DISCUSSION" ||
     room?.phase === "VOTING" ||
@@ -119,26 +131,23 @@ export default function RoomLobby() {
           session = null;
         }
 
-        const isCurrentHost =
-          fetchedRoom.hostPlayerId === session.playerId ||
-          fetchedRoom.players?.some(
-            (player) => player.id === session.playerId && player.isHost,
-          );
-
-        if (fetchedRoom.phase === "NIGHT") {
-          navigate(
-            isCurrentHost
-              ? `/room/${roomCode}/god`
-              : `/room/${roomCode}/round`,
-            { replace: true },
-          );
-          return;
-        }
+        const isCurrentHost = Boolean(
+          session?.playerId &&
+            (fetchedRoom.hostPlayerId === session.playerId ||
+              fetchedRoom.players?.some(
+                (player) =>
+                  player.id === session.playerId && player.isHost,
+              )),
+        );
 
         if (
-          ["DISCUSSION", "VOTING", "ELIMINATION", "FINISHED"].includes(
-            fetchedRoom.phase,
-          )
+          [
+            "NIGHT",
+            "DISCUSSION",
+            "VOTING",
+            "ELIMINATION",
+            "FINISHED",
+          ].includes(fetchedRoom.phase)
         ) {
           navigate(
             isCurrentHost
@@ -149,7 +158,7 @@ export default function RoomLobby() {
           return;
         }
 
-        // ROLE_ASSIGNMENT must remain on the role reveal screen.
+        // ROLE_ASSIGNMENT stays on the role assignment/reveal screen.
         if (fetchedRoom.phase === "ROLE_ASSIGNMENT") {
           navigate(
             isCurrentHost
@@ -161,14 +170,11 @@ export default function RoomLobby() {
         }
 
         if (
-          ["DISCUSSION", "VOTING", "ELIMINATION", "FINISHED"].includes(
-            fetchedRoom.phase,
-          ) ||
           fetchedRoom.status === "PLAYING" ||
           fetchedRoom.status === "FINISHED"
         ) {
           navigate(
-            fetchedRoom.hostPlayerId === session.playerId
+            isCurrentHost
               ? `/room/${roomCode}/god`
               : `/room/${roomCode}/round`,
             { replace: true },
@@ -181,6 +187,7 @@ export default function RoomLobby() {
 
         const handleConnect = () => {
           if (cancelled) return;
+
           setSocketStatus("connected");
           setError("");
         };
@@ -190,7 +197,7 @@ export default function RoomLobby() {
 
           if (
             data?.roomCode?.toUpperCase() !== roomCode ||
-            data?.playerId !== session.playerId
+            data?.playerId !== session?.playerId
           ) {
             return;
           }
@@ -201,11 +208,10 @@ export default function RoomLobby() {
 
         const handleRolesAssigned = (data) => {
           if (cancelled) return;
-
           if (data?.roomCode?.toUpperCase() !== roomCode) return;
 
           const player = fetchedRoom.players?.find(
-            (item) => item.id === session.playerId,
+            (item) => item.id === session?.playerId,
           );
 
           if (player?.isHost) return;
@@ -215,11 +221,10 @@ export default function RoomLobby() {
 
         const handleGameStarted = (data) => {
           if (cancelled) return;
-
           if (data?.roomCode?.toUpperCase() !== roomCode) return;
 
           const player = fetchedRoom.players?.find(
-            (item) => item.id === session.playerId,
+            (item) => item.id === session?.playerId,
           );
 
           if (player?.isHost) return;
@@ -229,11 +234,10 @@ export default function RoomLobby() {
 
         const handleNightPhaseChanged = (data) => {
           if (cancelled || !data) return;
-
           if (data.phase !== "NIGHT") return;
 
           const player = fetchedRoom.players?.find(
-            (item) => item.id === session.playerId,
+            (item) => item.id === session?.playerId,
           );
 
           navigate(
@@ -243,8 +247,11 @@ export default function RoomLobby() {
             { replace: true },
           );
         };
+
         const handleDisconnect = () => {
-          if (!cancelled) setSocketStatus("disconnected");
+          if (!cancelled) {
+            setSocketStatus("disconnected");
+          }
         };
 
         const handleConnectError = (err) => {
@@ -268,13 +275,16 @@ export default function RoomLobby() {
         if (!cancelled) {
           setError(
             err.response?.data?.message ||
-            err.message ||
-            "Unable to load this room.",
+              err.message ||
+              "Unable to load this room.",
           );
+
           setSocketStatus("disconnected");
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
@@ -308,8 +318,61 @@ export default function RoomLobby() {
     }
   };
 
+  const handleKickPlayer = async (player) => {
+    if (
+      !isHost ||
+      gameStarted ||
+      deleting ||
+      kickingPlayerId ||
+      !player?.id ||
+      player.isHost
+    ) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Kick ${player.username} from this lobby? They will need to join again to return.`,
+    );
+
+    if (!confirmed) return;
+
+    setKickingPlayerId(player.id);
+    setError("");
+
+    try {
+      const rawSession = localStorage.getItem(sessionKey);
+      const session = rawSession ? JSON.parse(rawSession) : null;
+
+      if (!session?.playerId || !session?.reconnectSecret) {
+        throw new Error(
+          "Your saved host session could not be found. Please reconnect.",
+        );
+      }
+
+      const result = await kickPlayer(roomCode, player.id, session);
+
+      if (result?.room) {
+        updateRoom(result.room, session.playerId);
+      } else {
+        const refreshedRoom = await getRoom(roomCode);
+
+        if (refreshedRoom) {
+          updateRoom(refreshedRoom, session.playerId);
+        }
+      }
+    } catch (err) {
+      setError(
+        err.response?.data?.message ||
+          err.message ||
+          `Unable to kick ${player.username}.`,
+      );
+    } finally {
+      setKickingPlayerId(null);
+    }
+  };
+
   const handleDeleteLobby = async () => {
-    if (!isHost || deleting) return;
+    if (!isHost || deleting || kickingPlayerId) return;
 
     const confirmed = window.confirm(
       "Delete this lobby permanently? All players will lose access to this room.",
@@ -336,8 +399,8 @@ export default function RoomLobby() {
     } catch (err) {
       setError(
         err.response?.data?.message ||
-        err.message ||
-        "Unable to delete the lobby.",
+          err.message ||
+          "Unable to delete the lobby.",
       );
     } finally {
       setDeleting(false);
@@ -358,7 +421,11 @@ export default function RoomLobby() {
       <div className="flex min-h-screen items-center justify-center bg-neutral-950 px-5 text-neutral-100">
         <div className="w-full max-w-md border border-neutral-800 bg-neutral-900 p-7">
           <Shield className="text-red-400" size={28} />
-          <h1 className="mt-4 text-xl font-semibold">Unable to open room</h1>
+
+          <h1 className="mt-4 text-xl font-semibold">
+            Unable to open room
+          </h1>
+
           <p className="mt-2 text-sm text-neutral-400">{error}</p>
 
           <button
@@ -399,7 +466,9 @@ export default function RoomLobby() {
 
         <div className="flex items-center gap-2">
           <Moon className="text-neutral-400" size={18} />
-          <span className="text-sm font-semibold tracking-widest">MAFIA</span>
+          <span className="text-sm font-semibold tracking-widest">
+            MAFIA
+          </span>
         </div>
       </header>
 
@@ -411,7 +480,9 @@ export default function RoomLobby() {
               {statusText}
             </div>
 
-            <h1 className="mt-3 text-4xl font-bold sm:text-5xl">Lobby</h1>
+            <h1 className="mt-3 text-4xl font-bold sm:text-5xl">
+              Lobby
+            </h1>
 
             <p className="mt-2 text-neutral-500">
               Invite your friends. Trust them at your own risk.
@@ -457,6 +528,7 @@ export default function RoomLobby() {
             <div className="flex items-center justify-between border-b border-neutral-800 px-5 py-4">
               <div>
                 <h2 className="font-semibold">Players</h2>
+
                 <p className="mt-0.5 text-sm text-neutral-500">
                   Players currently in this room
                 </p>
@@ -469,53 +541,89 @@ export default function RoomLobby() {
             </div>
 
             <div>
-              {players.map((player, index) => (
-                <div
-                  key={player.id}
-                  className="flex items-center gap-4 border-b border-neutral-800 px-5 py-3.5 last:border-b-0"
-                >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-neutral-700 bg-neutral-950 font-semibold text-neutral-300">
-                    {player.username?.charAt(0)?.toUpperCase() || "?"}
-                  </div>
+              {players.map((player, index) => {
+                const isBeingKicked = kickingPlayerId === player.id;
+                const canKick =
+                  isHost && !gameStarted && !player.isHost;
 
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate font-medium">{player.username}</p>
-
-                      {player.isHost && (
-                        <span className="inline-flex items-center gap-1 border border-amber-400/40 px-1.5 py-0.5 text-xs text-amber-300">
-                          <Crown size={11} />
-                          Host
-                        </span>
-                      )}
-
-                      {currentPlayer?.id === player.id && (
-                        <span className="border border-neutral-600 px-1.5 py-0.5 text-xs text-neutral-300">
-                          You
-                        </span>
-                      )}
+                return (
+                  <div
+                    key={player.id}
+                    className="flex items-center gap-3 border-b border-neutral-800 px-5 py-3.5 last:border-b-0 sm:gap-4"
+                  >
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-neutral-700 bg-neutral-950 font-semibold text-neutral-300">
+                      {player.username?.charAt(0)?.toUpperCase() || "?"}
                     </div>
 
-                    <p className="mt-0.5 text-xs text-neutral-500">
-                      Player {index + 1}
-                    </p>
-                  </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate font-medium">
+                          {player.username}
+                        </p>
 
-                  <div
-                    className={`flex shrink-0 items-center gap-1.5 text-xs ${player.isConnected
-                      ? "text-emerald-400"
-                      : "text-neutral-500"
+                        {player.isHost && (
+                          <span className="inline-flex items-center gap-1 border border-amber-400/40 px-1.5 py-0.5 text-xs text-amber-300">
+                            <Crown size={11} />
+                            Host
+                          </span>
+                        )}
+
+                        {currentPlayer?.id === player.id && (
+                          <span className="border border-neutral-600 px-1.5 py-0.5 text-xs text-neutral-300">
+                            You
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="mt-0.5 text-xs text-neutral-500">
+                        Player {index + 1}
+                      </p>
+                    </div>
+
+                    <div
+                      className={`flex shrink-0 items-center gap-1.5 text-xs ${
+                        player.isConnected
+                          ? "text-emerald-400"
+                          : "text-neutral-500"
                       }`}
-                  >
-                    {player.isConnected ? (
-                      <Wifi size={14} />
-                    ) : (
-                      <WifiOff size={14} />
+                    >
+                      {player.isConnected ? (
+                        <Wifi size={14} />
+                      ) : (
+                        <WifiOff size={14} />
+                      )}
+
+                      <span className="hidden sm:inline">
+                        {player.isConnected ? "Online" : "Offline"}
+                      </span>
+                    </div>
+
+                    {canKick && (
+                      <button
+                        type="button"
+                        onClick={() => handleKickPlayer(player)}
+                        disabled={Boolean(kickingPlayerId) || deleting}
+                        title={`Kick ${player.username}`}
+                        aria-label={`Kick ${player.username}`}
+                        className="inline-flex shrink-0 items-center justify-center gap-1.5 border border-red-500/30 px-2.5 py-2 text-xs font-medium text-red-300 transition hover:border-red-400/60 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50 sm:px-3"
+                      >
+                        {isBeingKicked ? (
+                          <LoaderCircle
+                            size={14}
+                            className="animate-spin"
+                          />
+                        ) : (
+                          <UserX size={14} />
+                        )}
+
+                        <span className="hidden sm:inline">
+                          {isBeingKicked ? "Kicking..." : "Kick"}
+                        </span>
+                      </button>
                     )}
-                    {player.isConnected ? "Online" : "Offline"}
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               {players.length === 0 && (
                 <p className="px-5 py-8 text-center text-sm text-neutral-500">
@@ -529,7 +637,9 @@ export default function RoomLobby() {
             <section className="border border-neutral-800 bg-neutral-900 p-5">
               <div className="flex items-center gap-2 text-amber-300">
                 <Crown size={18} />
-                <h2 className="font-semibold text-neutral-100">Your host</h2>
+                <h2 className="font-semibold text-neutral-100">
+                  Your host
+                </h2>
               </div>
 
               <p className="mt-3 text-sm text-neutral-200">
@@ -551,8 +661,8 @@ export default function RoomLobby() {
                 </div>
 
                 <p className="mt-2 text-sm leading-6 text-neutral-500">
-                  Configure Mafia, Doctor, Police, and Civilian roles before
-                  the game starts.
+                  Configure Mafia, Doctor, Police, and Civilian roles
+                  before the game starts.
                 </p>
 
                 <button
@@ -603,18 +713,22 @@ export default function RoomLobby() {
                 </div>
 
                 <p className="mt-2 text-sm leading-6 text-neutral-500">
-                  Permanently delete this lobby. All players will lose access.
+                  Permanently delete this lobby. All players will lose
+                  access.
                 </p>
 
                 <button
                   type="button"
                   onClick={handleDeleteLobby}
-                  disabled={deleting}
+                  disabled={deleting || Boolean(kickingPlayerId)}
                   className="mt-4 flex w-full items-center justify-center gap-2 border border-red-500/40 px-4 py-2.5 text-sm font-semibold text-red-300 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {deleting ? (
                     <>
-                      <LoaderCircle size={16} className="animate-spin" />
+                      <LoaderCircle
+                        size={16}
+                        className="animate-spin"
+                      />
                       Deleting lobby...
                     </>
                   ) : (
