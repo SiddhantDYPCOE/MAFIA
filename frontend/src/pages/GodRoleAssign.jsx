@@ -70,6 +70,7 @@ export default function GodRoleAssign() {
   const [message, setMessage] = useState("");
   const [revealed, setRevealed] = useState(false);
   const [nightStarted, setNightStarted] = useState(false);
+  const [localGamePhase, setLocalGamePhase] = useState("LOBBY");
 
   const totalRoles = Object.values(roles).reduce(
     (total, count) => total + Number(count || 0),
@@ -314,6 +315,8 @@ export default function GodRoleAssign() {
       });
       setRolesAssigned(true);
       setGameStarted(false);
+      setLocalGamePhase("ROLE_ASSIGNMENT");
+      setNightStarted(false);
       setMessage(
         `Roles assigned to ${response.assignedPlayerCount} players.`,
       );
@@ -337,6 +340,7 @@ export default function GodRoleAssign() {
       await emitWithAck("game:start");
 
       setGameStarted(true);
+      setLocalGamePhase("ROLE_ASSIGNMENT");
       setMessage("Game started. Players can now reveal their roles.");
     } catch (err) {
       setError(err.message);
@@ -371,6 +375,7 @@ export default function GodRoleAssign() {
       const response = await emitWithAck("game:roles:random");
       setRolesAssigned(true);
       setGameStarted(false);
+      setNightStarted(false);
       setMessage(
         `Random roles assigned to ${response.assignedPlayerCount} players.`,
       );
@@ -558,24 +563,30 @@ export default function GodRoleAssign() {
               </div>
 
               <button
-                onClick={assignManualRoles}
-                disabled={
-  busy ||
-  rolesAssigned ||
-  !socket?.connected ||
-  totalRoles !== playablePlayers.length ||
-  totalRoles < 4
-}
-                className="mt-5 flex w-full items-center justify-center gap-2 border border-neutral-100 bg-neutral-100 px-4 py-3 font-semibold text-neutral-950 transition hover:bg-neutral-300 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {busy ? (
-                  <LoaderCircle className="animate-spin" size={18} />
-                ) : (
-                  <Shield size={18} />
-                )}
-                Assign selected roles
-              </button>
+  onClick={rolesAssigned ? startGame : assignManualRoles}
+  disabled={
+    busy ||
+    !socket?.connected ||
+    (!rolesAssigned &&
+      (totalRoles !== playablePlayers.length || totalRoles < 4)) ||
+    (rolesAssigned && gameStarted)
+  }
+  className="mt-5 flex w-full items-center justify-center gap-2 border border-neutral-100 bg-neutral-100 px-4 py-3 font-semibold text-neutral-950 transition hover:bg-neutral-300 disabled:cursor-not-allowed disabled:opacity-50"
+>
+  {busy ? (
+    <LoaderCircle className="animate-spin" size={18} />
+  ) : rolesAssigned ? (
+    <Eye size={18} />
+  ) : (
+    <Shield size={18} />
+  )}
 
+  {rolesAssigned
+    ? gameStarted
+      ? "Game Started"
+      : "Start Game — Reveal Roles"
+    : "Assign selected roles"}
+</button>
               <button
                 onClick={assignRandomRoles}
                 // disabled={busy || !socket?.connected || playablePlayers.length < 4}
@@ -586,20 +597,7 @@ export default function GodRoleAssign() {
                 Assign random roles
               </button>
 
-              {rolesAssigned && !gameStarted && (
-                <button
-                  onClick={startGame}
-                  disabled={busy || !socket?.connected}
-                  className="mt-3 flex w-full items-center justify-center gap-2 border border-emerald-500/50 px-4 py-3 font-semibold text-emerald-300 transition hover:bg-emerald-500/10 disabled:opacity-50"
-                >
-                  {busy ? (
-                    <LoaderCircle className="animate-spin" size={18} />
-                  ) : (
-                    <Shield size={18} />
-                  )}
-                  Start Game — Reveal Roles
-                </button>
-              )}
+             
 
               {gameStarted && !nightStarted && (
                 <button
@@ -644,8 +642,8 @@ export default function GodRoleAssign() {
 
                     <span
                       className={`border px-2 py-0.5 text-xs ${player.isConnected
-                          ? "border-emerald-500/40 text-emerald-400"
-                          : "border-neutral-700 text-neutral-500"
+                        ? "border-emerald-500/40 text-emerald-400"
+                        : "border-neutral-700 text-neutral-500"
                         }`}
                     >
                       {player.isConnected ? "Online" : "Offline"}
@@ -663,7 +661,7 @@ export default function GodRoleAssign() {
           </div>
         ) : (
           <section className="mx-auto max-w-xl border border-neutral-800 bg-neutral-900 p-8 text-center">
-            
+
           </section>
         )}
       </div>

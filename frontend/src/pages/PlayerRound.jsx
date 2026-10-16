@@ -137,6 +137,8 @@ export default function PlayerRound() {
   const [lastInvestigation, setLastInvestigation] = useState(null);
   const [roleVisible, setRoleVisible] = useState(true);
   const [sessionPlayerId, setSessionPlayerId] = useState("");
+  const [eliminationAnnouncement, setEliminationAnnouncement] =
+    useState(null);
 
   const [votingPrivate, setVotingPrivate] = useState(null);
   const [voteTarget, setVoteTarget] = useState("");
@@ -149,41 +151,44 @@ export default function PlayerRound() {
     let currentSocket;
     let nightTimer;
     let votingTimer;
+    let eliminationTimer;
 
     const clearGameTimers = () => {
       clearTimeout(nightTimer);
       clearTimeout(votingTimer);
+      clearTimeout(eliminationTimer);
     };
 
-const handleGameRestart = (payload) => {
-  if (!active) return;
+    const handleGameRestart = (payload) => {
+      if (!active) return;
 
-  console.log("Received game:play-again event:", payload);
+      console.log("Received game:play-again event:", payload);
 
-  const targetRoomCode = (
-    payload?.roomCode || roomCode
-  ).toUpperCase();
+      const targetRoomCode = (
+        payload?.roomCode || roomCode
+      ).toUpperCase();
 
-  clearGameTimers();
+      clearGameTimers();
 
-  // Clear finished-game state.
-  setState(null);
-  setMyRole(null);
-  setPrivateState(null);
-  setSelectedTarget("");
-  setSubmitting(false);
-  setError("");
-  setMessage("");
-  setLastInvestigation(null);
-  setRoleVisible(true);
-  setVotingPrivate(null);
-  setVoteTarget("");
-  setVoteSubmitting(false);
-  setVotingResult(null);
-  setNightResult(null);
+      // Clear finished-game state.
+      setState(null);
+      setMyRole(null);
+      setPrivateState(null);
+      setSelectedTarget("");
+      setSubmitting(false);
+      setError("");
+      setMessage("");
+      setLastInvestigation(null);
+      setRoleVisible(true);
+      setVotingPrivate(null);
+      setVoteTarget("");
+      setVoteSubmitting(false);
+      setVotingResult(null);
+      setNightResult(null);
+      setEliminationAnnouncement(null);
 
-  navigate(`/room/${targetRoomCode}`, { replace: true });
-};
+      navigate(`/room/${targetRoomCode}`, { replace: true });
+    };
 
     const mergePublicState = (nextState) => {
       if (!active || !nextState) return;
@@ -306,13 +311,32 @@ const handleGameRestart = (payload) => {
         if (!active || !result) return;
 
         clearTimeout(votingTimer);
+        clearTimeout(eliminationTimer);
+
         setVotingResult(result);
+
+        // Show the announcement when a player is eliminated,
+        // including when the elimination ends the game.
+        if (
+          ["ELIMINATED", "GAME_OVER"].includes(result.outcome) &&
+          result.eliminatedUsername
+        ) {
+          setEliminationAnnouncement({
+            username: result.eliminatedUsername,
+          });
+
+          eliminationTimer = setTimeout(() => {
+            if (active) {
+              setEliminationAnnouncement(null);
+            }
+          }, 4500);
+        }
 
         // Keep a tie visible until God resolves it.
         if (result.outcome !== "TIE") {
           votingTimer = setTimeout(() => {
             if (active) setVotingResult(null);
-          }, 4000);
+          }, 4500);
         }
       });
 
@@ -474,15 +498,15 @@ const handleGameRestart = (payload) => {
         setPrivateState((previous) =>
           previous
             ? {
-                ...previous,
-                selection: submittedTarget,
-                ...(response.policeResult
-                  ? { policeResult: response.policeResult }
-                  : {}),
-                ...(myRole === "POLICE"
-                  ? { actionEnabled: false }
-                  : {}),
-              }
+              ...previous,
+              selection: submittedTarget,
+              ...(response.policeResult
+                ? { policeResult: response.policeResult }
+                : {}),
+              ...(myRole === "POLICE"
+                ? { actionEnabled: false }
+                : {}),
+            }
             : previous,
         );
 
@@ -696,11 +720,10 @@ const handleGameRestart = (payload) => {
                               }}
                               disabled={voteSubmitting}
                               aria-pressed={selected}
-                              className={`flex w-full items-center justify-between border p-4 text-left transition ${
-                                selected
+                              className={`flex w-full items-center justify-between border p-4 text-left transition ${selected
                                   ? "border-neutral-100 bg-neutral-800"
                                   : "border-neutral-800 bg-neutral-900 hover:border-neutral-600"
-                              } disabled:opacity-60`}
+                                } disabled:opacity-60`}
                             >
                               <span>{player.username}</span>
 
@@ -737,75 +760,75 @@ const handleGameRestart = (payload) => {
               )}
 
               {isVoting && showVotingResults && (
-  <section className="mt-6 border border-neutral-700 bg-neutral-950 p-6 text-left">
-    {votingResult.outcome === "ELIMINATED" ? (
-      <div className="py-5 text-center">
-        <div className="mx-auto flex h-16 w-16 items-center justify-center border border-red-500/30 bg-red-500/10">
-          <span className="text-3xl">⚡</span>
-        </div>
+                <section className="mt-6 border border-neutral-700 bg-neutral-950 p-6 text-left">
+                  {votingResult.outcome === "ELIMINATED" ? (
+                    <div className="py-5 text-center">
+                      <div className="mx-auto flex h-16 w-16 items-center justify-center border border-red-500/30 bg-red-500/10">
+                        <span className="text-3xl">⚡</span>
+                      </div>
 
-        <p className="mt-5 text-xs uppercase tracking-[0.3em] text-red-400">
-          The town has spoken
-        </p>
+                      <p className="mt-5 text-xs uppercase tracking-[0.3em] text-red-400">
+                        The town has spoken
+                      </p>
 
-        <h2 className="mt-3 text-2xl font-bold text-white sm:text-3xl">
-          {votingResult.eliminatedUsername}
-        </h2>
+                      <h2 className="mt-3 text-2xl font-bold text-white sm:text-3xl">
+                        {votingResult.eliminatedUsername}
+                      </h2>
 
-        <p className="mt-3 text-lg font-semibold text-red-300">
-          Sent to the electric chair!
-        </p>
+                      <p className="mt-3 text-lg font-semibold text-red-300">
+                        Sent to the electric chair!
+                      </p>
 
-        <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-neutral-400">
-          The player was tied to the electric chair and burned.
-          Looks like their luck finally ran out. ⚡
-        </p>
+                      <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-neutral-400">
+                        The player was tied to the electric chair and burned.
+                        Looks like their luck finally ran out. ⚡
+                      </p>
 
-        <p className="mt-5 text-xs text-neutral-600">
-          Their role remains a secret...
-        </p>
-      </div>
-    ) : (
-      <>
-        <h2 className="text-xl font-semibold">
-          {votingResult.outcome === "TIE"
-            ? "The vote is tied"
-            : votingResult.outcome === "NO_ELIMINATION"
-              ? "No elimination"
-              : votingResult.outcome === "GAME_OVER"
-                ? "Game finished"
-                : "Voting results"}
-        </h2>
+                      <p className="mt-5 text-xs text-neutral-600">
+                        Their role remains a secret...
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <h2 className="text-xl font-semibold">
+                        {votingResult.outcome === "TIE"
+                          ? "The vote is tied"
+                          : votingResult.outcome === "NO_ELIMINATION"
+                            ? "No elimination"
+                            : votingResult.outcome === "GAME_OVER"
+                              ? "Game finished"
+                              : "Voting results"}
+                      </h2>
 
-        <p className="mt-2 text-sm text-neutral-500">
-          Final vote counts. Individual votes remain private.
-        </p>
+                      <p className="mt-2 text-sm text-neutral-500">
+                        Final vote counts. Individual votes remain private.
+                      </p>
 
-        <div className="mt-4 border border-neutral-800">
-          {(votingResult.counts ?? []).map((candidate) => (
-            <div
-              key={candidate.playerId}
-              className="flex justify-between border-b border-neutral-800 bg-neutral-900 px-3 py-2.5 last:border-b-0"
-            >
-              <span>{candidate.username}</span>
+                      <div className="mt-4 border border-neutral-800">
+                        {(votingResult.counts ?? []).map((candidate) => (
+                          <div
+                            key={candidate.playerId}
+                            className="flex justify-between border-b border-neutral-800 bg-neutral-900 px-3 py-2.5 last:border-b-0"
+                          >
+                            <span>{candidate.username}</span>
 
-              <span className="font-semibold text-neutral-300">
-                {candidate.count} vote
-                {candidate.count === 1 ? "" : "s"}
-              </span>
-            </div>
-          ))}
-        </div>
+                            <span className="font-semibold text-neutral-300">
+                              {candidate.count} vote
+                              {candidate.count === 1 ? "" : "s"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
 
-        {votingResult.outcome === "TIE" && (
-          <p className="mt-4 text-sm text-amber-300">
-            God will choose a revote or no elimination.
-          </p>
-        )}
-      </>
-    )}
-  </section>
-)}
+                      {votingResult.outcome === "TIE" && (
+                        <p className="mt-4 text-sm text-amber-300">
+                          God will choose a revote or no elimination.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </section>
+              )}
             </section>
 
             {canChooseTarget && (
@@ -845,11 +868,10 @@ const handleGameRestart = (payload) => {
                         }}
                         disabled={submitting}
                         aria-pressed={selected}
-                        className={`flex w-full items-center justify-between border p-4 text-left transition ${
-                          selected
+                        className={`flex w-full items-center justify-between border p-4 text-left transition ${selected
                             ? "border-neutral-100 bg-neutral-800"
                             : "border-neutral-800 bg-neutral-950 hover:border-neutral-600"
-                        } disabled:opacity-60`}
+                          } disabled:opacity-60`}
                       >
                         <span>{player.username}</span>
 
@@ -898,11 +920,10 @@ const handleGameRestart = (payload) => {
                 </h2>
 
                 <p
-                  className={`mt-3 text-sm ${
-                    lastInvestigation.isMafia
+                  className={`mt-3 text-sm ${lastInvestigation.isMafia
                       ? "text-red-300"
                       : "text-emerald-300"
-                  }`}
+                    }`}
                 >
                   {lastInvestigation.isMafia
                     ? "Your investigation indicates this player is Mafia."
@@ -975,7 +996,7 @@ const handleGameRestart = (payload) => {
               {nightResult.announcement === "NO_DEATH"
                 ? "Nobody was eliminated"
                 : nightResult.eliminatedUsername ||
-                  "A dark morning..."}
+                "A dark morning..."}
             </h2>
 
             <p className="mt-5 text-neutral-400">
@@ -986,6 +1007,36 @@ const handleGameRestart = (payload) => {
           </div>
         </div>
       )}
+      {eliminationAnnouncement && (
+  <div className="fixed inset-0 z-[100] flex items-center justify-center bg-neutral-950/95 px-6 text-center">
+    <div className="w-full max-w-lg animate-pulse">
+      <div className="mx-auto flex h-24 w-24 animate-bounce items-center justify-center border border-red-500/40 bg-red-500/10 shadow-[0_0_60px_rgba(239,68,68,0.2)]">
+        <span className="text-6xl">⚡</span>
+      </div>
+
+      <p className="mt-8 text-xs uppercase tracking-[0.4em] text-red-400">
+        The town has spoken
+      </p>
+
+      <h2 className="mt-4 text-4xl font-black text-white sm:text-6xl">
+        {eliminationAnnouncement.username}
+      </h2>
+
+      <p className="mt-5 text-2xl font-bold text-red-400">
+        SENT TO THE ELECTRIC CHAIR!
+      </p>
+
+      <p className="mx-auto mt-4 max-w-md text-base leading-relaxed text-neutral-300">
+        Tied to the electric chair and burned! ⚡
+        Looks like someone should have kept a lower profile.
+      </p>
+
+      <p className="mt-8 text-xs uppercase tracking-widest text-neutral-600">
+        Their role remains a secret...
+      </p>
+    </div>
+  </div>
+)}
     </main>
   );
 }
