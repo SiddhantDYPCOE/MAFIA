@@ -560,11 +560,12 @@ export default function GodRoleAssign() {
               <button
                 onClick={assignManualRoles}
                 disabled={
-                  busy ||
-                  !socket?.connected ||
-                  totalRoles !== playablePlayers.length ||
-                  totalRoles < 4
-                }
+  busy ||
+  rolesAssigned ||
+  !socket?.connected ||
+  totalRoles !== playablePlayers.length ||
+  totalRoles < 4
+}
                 className="mt-5 flex w-full items-center justify-center gap-2 border border-neutral-100 bg-neutral-100 px-4 py-3 font-semibold text-neutral-950 transition hover:bg-neutral-300 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy ? (

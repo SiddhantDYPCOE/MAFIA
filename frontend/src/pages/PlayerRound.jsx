@@ -737,44 +737,75 @@ const handleGameRestart = (payload) => {
               )}
 
               {isVoting && showVotingResults && (
-                <section className="mt-6 border border-neutral-700 bg-neutral-950 p-6 text-left">
-                  <h2 className="text-xl font-semibold">
-                    {votingResult.outcome === "TIE"
-                      ? "The vote is tied"
-                      : votingResult.outcome === "NO_ELIMINATION"
-                        ? "No elimination"
-                        : votingResult.outcome === "GAME_OVER"
-                          ? "Game finished"
-                          : "Voting results"}
-                  </h2>
+  <section className="mt-6 border border-neutral-700 bg-neutral-950 p-6 text-left">
+    {votingResult.outcome === "ELIMINATED" ? (
+      <div className="py-5 text-center">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center border border-red-500/30 bg-red-500/10">
+          <span className="text-3xl">⚡</span>
+        </div>
 
-                  <p className="mt-2 text-sm text-neutral-500">
-                    Final vote counts. Individual votes remain private.
-                  </p>
+        <p className="mt-5 text-xs uppercase tracking-[0.3em] text-red-400">
+          The town has spoken
+        </p>
 
-                  <div className="mt-4 border border-neutral-800">
-                    {(votingResult.counts ?? []).map((candidate) => (
-                      <div
-                        key={candidate.playerId}
-                        className="flex justify-between border-b border-neutral-800 bg-neutral-900 px-3 py-2.5 last:border-b-0"
-                      >
-                        <span>{candidate.username}</span>
+        <h2 className="mt-3 text-2xl font-bold text-white sm:text-3xl">
+          {votingResult.eliminatedUsername}
+        </h2>
 
-                        <span className="font-semibold text-neutral-300">
-                          {candidate.count} vote
-                          {candidate.count === 1 ? "" : "s"}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+        <p className="mt-3 text-lg font-semibold text-red-300">
+          Sent to the electric chair!
+        </p>
 
-                  {votingResult.outcome === "TIE" && (
-                    <p className="mt-4 text-sm text-amber-300">
-                      God will choose a revote or no elimination.
-                    </p>
-                  )}
-                </section>
-              )}
+        <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-neutral-400">
+          The player was tied to the electric chair and burned.
+          Looks like their luck finally ran out. ⚡
+        </p>
+
+        <p className="mt-5 text-xs text-neutral-600">
+          Their role remains a secret...
+        </p>
+      </div>
+    ) : (
+      <>
+        <h2 className="text-xl font-semibold">
+          {votingResult.outcome === "TIE"
+            ? "The vote is tied"
+            : votingResult.outcome === "NO_ELIMINATION"
+              ? "No elimination"
+              : votingResult.outcome === "GAME_OVER"
+                ? "Game finished"
+                : "Voting results"}
+        </h2>
+
+        <p className="mt-2 text-sm text-neutral-500">
+          Final vote counts. Individual votes remain private.
+        </p>
+
+        <div className="mt-4 border border-neutral-800">
+          {(votingResult.counts ?? []).map((candidate) => (
+            <div
+              key={candidate.playerId}
+              className="flex justify-between border-b border-neutral-800 bg-neutral-900 px-3 py-2.5 last:border-b-0"
+            >
+              <span>{candidate.username}</span>
+
+              <span className="font-semibold text-neutral-300">
+                {candidate.count} vote
+                {candidate.count === 1 ? "" : "s"}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {votingResult.outcome === "TIE" && (
+          <p className="mt-4 text-sm text-amber-300">
+            God will choose a revote or no elimination.
+          </p>
+        )}
+      </>
+    )}
+  </section>
+)}
             </section>
 
             {canChooseTarget && (
