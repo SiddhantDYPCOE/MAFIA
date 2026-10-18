@@ -3,7 +3,7 @@ import "dotenv/config"
 import { socketAuth } from "../socket/socketAuth.js";
 
 const allowedOrigins = [
-  "https://mafia-olive-xi.vercel.app"
+  "http://192.168.1.22:5173"
 ];
 
 export function createSocketServer(httpServer) {

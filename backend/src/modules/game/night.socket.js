@@ -125,12 +125,40 @@ async function broadcastNightState(io, roomCode) {
       selection: null,
     };
 
-    if (role === "MAFIA") {
-      privateState.selection =
-        state.mafiaSelections?.[player.id] ?? null;
+    
+if (role === "MAFIA") {
+  const proposal = state.mafiaProposal ?? null;
+  const confirmations = proposal?.confirmations ?? [];
 
-      privateState.selections = state.mafiaSelections ?? {};
-    } else if (role === "DOCTOR") {
+  privateState.selection =
+    proposal?.targetId ??
+    state.mafiaSelections?.[player.id] ??
+    null;
+
+  privateState.selection = state.mafiaSelections ?? {};
+
+  privateState.mafiaProposal = proposal
+    ? {
+        proposerId: proposal.proposerId,
+        targetId: proposal.targetId,
+        confirmations,
+        accepted: proposal.accepted === true,
+      }
+    : null;
+
+  privateState.mafiaConfirmed =
+    Boolean(proposal) && confirmations.includes(player.id);
+
+  privateState.mafiaDecisionRequired =
+    Boolean(proposal) &&
+    !proposal.accepted &&
+    proposal.proposerId !== player.id &&
+    !confirmations.includes(player.id);
+
+  privateState.mafiaCanPropose =
+    roleIsActive && !proposal;
+}
+ else if (role === "DOCTOR") {
       privateState.selection = state.doctorSelection ?? null;
     } else if (role === "POLICE") {
       privateState.selection = state.policeSelection ?? null;
@@ -275,6 +303,39 @@ export function registerNightSocket(io) {
         }
       },
     );
+
+socket.on(
+  "game:night:mafia-decision",
+  async (payload = {}, ack = () => {}) => {
+    try {
+      if (!isAuthenticated(socket) || socket.data.isHost === true) {
+        throw new Error(
+          "Only a playing participant can respond to a Mafia proposal.",
+        );
+      }
+
+      const roomCode = socket.data.session.roomCode;
+      const playerId = socket.data.session.playerId;
+
+      const result = await nightService.submitMafiaDecision(
+        roomCode,
+        playerId,
+        payload.decision,
+      );
+
+      await broadcastNightState(io, roomCode);
+
+      ack({
+        success: true,
+        decision: result.decision,
+        mafiaProposal: result.mafiaProposal ?? null,
+        mafiaTarget: result.mafiaTarget ?? null,
+      });
+    } catch (error) {
+      ackError(ack, error);
+    }
+  },
+);
 
     socket.on(
       "game:night:advance",
