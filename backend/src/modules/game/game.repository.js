@@ -177,6 +177,61 @@ export const gameRepository = {
     });
   },
 
+
+  async updateNightStateSafely(roomId, expectedStep, updateState) {
+    return runSerializable(async (tx) => {
+      const room = await tx.gameRoom.findUnique({
+        where: { id: roomId },
+        include: {
+          players: { orderBy: { joinedAt: "asc" } },
+        },
+      });
+
+      if (
+        !room ||
+        room.status !== "PLAYING" ||
+        room.phase !== "NIGHT" ||
+        room.nightStep !== expectedStep
+      ) {
+        throw new Error(
+          "The night step changed. Refresh your screen.",
+        );
+      }
+
+      // Read and update the latest state inside the same
+      // serializable transaction.
+      const update = await updateState(room);
+
+      if (!update || !update.nightState) {
+        throw new Error("Invalid night state update.");
+      }
+
+      const result = await tx.gameRoom.updateMany({
+        where: {
+          id: roomId,
+          status: "PLAYING",
+          phase: "NIGHT",
+          nightStep: expectedStep,
+        },
+        data: {
+          nightState: update.nightState,
+        },
+      });
+
+      if (result.count !== 1) {
+        throw new Error(
+          "The night state changed. Refresh and try again.",
+        );
+      }
+
+      return {
+        count: result.count,
+        ...update,
+      };
+    });
+  },
+
+
   async resolveNightAndStartDiscussion(
     roomId,
     nightState,

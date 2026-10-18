@@ -700,9 +700,12 @@ export default function GodNightControl() {
 
   const isChooseStep = Boolean(state.nightStep?.endsWith("_CHOOSE"));
 
+  const mafiaProposal = nightState.mafiaProposal ?? null;
+
   const hasSelection =
     state.nightStep === "MAFIA_CHOOSE"
-      ? mafiaSelections.length > 0
+      ? mafiaProposal?.accepted === true &&
+      Boolean(nightState.mafiaTarget)
       : Boolean(currentTargetId);
 
   const status =
@@ -856,51 +859,109 @@ export default function GodNightControl() {
                 <h2 className="mt-8 text-2xl font-semibold">
                   {prompt.title}
                 </h2>
+                {state.nightStep === "MAFIA_CHOOSE" && (
+                  <div className="mt-5 border border-red-500/30 bg-neutral-950 p-4">
+                    <h3 className="font-semibold text-red-300">
+                      Mafia target agreement
+                    </h3>
 
+                    {!mafiaProposal ? (
+                      <p className="mt-3 text-sm text-neutral-400">
+                        Waiting for a Mafia member to propose a target...
+                      </p>
+                    ) : (
+                      <>
+                        <p className="mt-3 text-sm">
+                          {mafiaProposal.accepted ? (
+                            <span className="text-emerald-300">
+                              All living Mafia members confirmed. You can advance.
+                            </span>
+                          ) : (
+                            <span className="text-amber-300">
+                              Waiting for Mafia members to confirm or cancel.
+                            </span>
+                          )}
+                        </p>
+
+                        <div className="mt-4 space-y-2">
+                          {(state.livingMafia ?? []).map((player) => {
+                            const confirmed =
+                              (mafiaProposal.confirmations ?? []).includes(
+                                player.id,
+                              );
+
+                            return (
+                              <div
+                                key={player.id}
+                                className="flex items-center justify-between gap-3 border border-neutral-800 px-3 py-2"
+                              >
+                                <span className="text-sm text-neutral-300">
+                                  {player.username}
+                                  {player.id === mafiaProposal.proposerId
+                                    ? " (Proposer)"
+                                    : ""}
+                                </span>
+
+                                <span
+                                  className={`text-xs ${confirmed
+                                      ? "text-emerald-300"
+                                      : "text-amber-300"
+                                    }`}
+                                >
+                                  {confirmed ? "Confirmed" : "Pending"}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
                 <p className="mt-2 text-sm text-neutral-500">
                   Round {state.round || 1} · Step {state.nightStep}
                 </p>
 
                 {/* {isChooseStep && (
-                  <div className="mt-5 border border-neutral-800 bg-neutral-950 p-4">
-                    <h3 className="font-semibold text-neutral-300">
-                      Player selections
-                    </h3>
+      <div className="mt-5 border border-neutral-800 bg-neutral-950 p-4">
+        <h3 className="font-semibold text-neutral-300">
+          Player selections
+        </h3>
 
-                    {state.nightStep === "MAFIA_CHOOSE" ? (
-                      mafiaSelections.length > 0 ? (
-                        <div className="mt-3 space-y-2">
-                          {mafiaSelections.map(
-                            ([playerId, targetId]) => (
-                              <div
-                                key={playerId}
-                                className="flex justify-between gap-3 text-sm"
-                              >
-                                <span className="text-neutral-500">
-                                  {getPlayerName(playerId)}
-                                </span>
+        {state.nightStep === "MAFIA_CHOOSE" ? (
+          mafiaSelections.length > 0 ? (
+            <div className="mt-3 space-y-2">
+              {mafiaSelections.map(
+                ([playerId, targetId]) => (
+                  <div
+                    key={playerId}
+                    className="flex justify-between gap-3 text-sm"
+                  >
+                    <span className="text-neutral-500">
+                      {getPlayerName(playerId)}
+                    </span>
 
-                                <span className="text-neutral-200">
-                                  → {getPlayerName(targetId)}
-                                </span>
-                              </div>
-                            ),
-                          )}
-                        </div>
-                      ) : (
-                        <p className="mt-3 text-sm text-amber-300">
-                          Waiting for Mafia to select a target...
-                        </p>
-                      )
-                    ) : (
-                      <p className="mt-3 text-sm text-neutral-200">
-                        {currentTargetId
-                          ? `${getPlayerName(currentTargetId)} selected`
-                          : "Waiting for a selection..."}
-                      </p>
-                    )}
+                    <span className="text-neutral-200">
+                      → {getPlayerName(targetId)}
+                    </span>
                   </div>
-                )} */}
+                ),
+              )}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-amber-300">
+              Waiting for Mafia to select a target...
+            </p>
+          )
+        ) : (
+          <p className="mt-3 text-sm text-neutral-200">
+            {currentTargetId
+              ? `${getPlayerName(currentTargetId)} selected`
+              : "Waiting for a selection..."}
+          </p>
+        )}
+      </div>
+    )} */}
 
                 <button
                   type="button"
@@ -987,14 +1048,13 @@ export default function GodNightControl() {
                         <div
                           className="h-full bg-neutral-100 transition-all"
                           style={{
-                            width: `${
-                              eligible
-                                ? Math.min(
-                                    100,
-                                    (submitted / eligible) * 100,
-                                  )
-                                : 0
-                            }%`,
+                            width: `${eligible
+                              ? Math.min(
+                                100,
+                                (submitted / eligible) * 100,
+                              )
+                              : 0
+                              }%`,
                           }}
                         />
                       </div>
@@ -1027,16 +1087,15 @@ export default function GodNightControl() {
                               <div
                                 className="h-1.5 bg-neutral-100"
                                 style={{
-                                  width: `${
-                                    submitted
-                                      ? Math.min(
-                                          100,
-                                          (candidate.count /
-                                            submitted) *
-                                            100,
-                                        )
-                                      : 0
-                                  }%`,
+                                  width: `${submitted
+                                    ? Math.min(
+                                      100,
+                                      (candidate.count /
+                                        submitted) *
+                                      100,
+                                    )
+                                    : 0
+                                    }%`,
                                 }}
                               />
                             </div>

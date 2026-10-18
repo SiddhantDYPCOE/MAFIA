@@ -271,18 +271,21 @@ export default function PlayerRound() {
       );
 
       currentSocket.on("game:night:private-state", (data) => {
-        if (!active || !data) return;
+  if (!active || !data) return;
 
-        setPrivateState(data);
+  setPrivateState(data);
 
-        if (data.selection) {
-          setSelectedTarget(data.selection);
-        }
+ 
+  if (Object.prototype.hasOwnProperty.call(data, "mafiaProposal")) {
+    setSelectedTarget(data.mafiaProposal?.targetId ?? "");
+  } else if (data.selection) {
+    setSelectedTarget(data.selection);
+  }
 
-        if (data.policeResult) {
-          setLastInvestigation(data.policeResult);
-        }
-      });
+  if (data.policeResult) {
+    setLastInvestigation(data.policeResult);
+  }
+});
 
       currentSocket.on("game:night:result", (result) => {
         if (!active || !result) return;
@@ -459,7 +462,48 @@ export default function PlayerRound() {
       },
     );
   }
+function submitMafiaDecision(decision) {
+  if (
+    isFinished ||
+    !socket?.connected ||
+    submitting ||
+    !["CONFIRM", "CANCEL"].includes(decision) ||
+    !privateState?.mafiaProposal
+  ) {
+    return;
+  }
 
+  setSubmitting(true);
+  setError("");
+  setMessage("");
+
+  socket.timeout(8000).emit(
+    "game:night:mafia-decision",
+    { decision },
+    (timeoutError, response) => {
+      setSubmitting(false);
+
+      if (timeoutError) {
+        setError("The server did not respond. Please try again.");
+        return;
+      }
+
+      if (!response?.success) {
+        setError(
+          response?.message || "Could not process the Mafia decision.",
+        );
+        return;
+      }
+
+      if (decision === "CONFIRM") {
+        setMessage("Target confirmed. Waiting for the other Mafia members.");
+      } else {
+        setSelectedTarget("");
+        setMessage("Proposal cancelled. The Mafia can select a new target.");
+      }
+    },
+  );
+}
   function submitTarget() {
     if (
       isFinished ||
@@ -568,12 +612,21 @@ export default function PlayerRound() {
       allowedCandidates.includes(player.id),
   );
 
-  const canChooseTarget =
-    !isFinished &&
-    isNight &&
-    Boolean(action) &&
-    Boolean(privateState?.actionEnabled) &&
-    !submitting;
+ const mafiaProposal = privateState?.mafiaProposal ?? null;
+
+const canChooseTarget =
+  !isFinished &&
+  isNight &&
+  Boolean(action) &&
+  Boolean(privateState?.actionEnabled) &&
+  (myRole !== "MAFIA" || Boolean(privateState?.mafiaCanPropose)) &&
+  !submitting;
+
+const showMafiaProposal =
+  !isFinished &&
+  isNight &&
+  myRole === "MAFIA" &&
+  Boolean(mafiaProposal);
 
   const showVotingResults = Boolean(votingResult);
 
@@ -830,7 +883,102 @@ export default function PlayerRound() {
                 </section>
               )}
             </section>
+{showMafiaProposal && (
+  <section className="mt-6 border border-red-500/30 bg-neutral-900 p-6">
+    <div className="flex items-center gap-3">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-red-500/30 bg-red-500/10">
+        <Target size={20} className="text-red-300" />
+      </div>
 
+      <div>
+        <h2 className="font-semibold text-white">
+          Mafia target proposal
+        </h2>
+
+        <p className="mt-1 text-sm text-neutral-400">
+          Review the proposed target before the night can continue.
+        </p>
+      </div>
+    </div>
+
+    <div className="mt-5 border border-neutral-700 bg-neutral-950 p-4">
+      <p className="text-sm text-neutral-500">
+        {players.find(
+          (player) => player.id === mafiaProposal.proposerId,
+        )?.username ?? "A Mafia member"}{" "}
+        has selected
+      </p>
+
+      <p className="mt-1 text-xl font-bold text-red-300">
+        {players.find(
+          (player) => player.id === mafiaProposal.targetId,
+        )?.username ?? "Unknown player"}
+      </p>
+
+      <p className="mt-2 text-xs text-neutral-500">
+        This proposal is visible only to Mafia members and God.
+      </p>
+    </div>
+
+    <div className="mt-4 flex items-center justify-between gap-3 text-sm">
+      <span className="text-neutral-400">Mafia confirmations</span>
+
+      <span className="text-neutral-200">
+        {mafiaProposal.confirmations?.length ?? 0} confirmed
+      </span>
+    </div>
+
+    {mafiaProposal.accepted ? (
+      <div className="mt-5 flex items-start gap-2 border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm text-emerald-300">
+        <CheckCircle2 size={18} className="mt-0.5 shrink-0" />
+        <p>
+          All living Mafia members have confirmed. The target is locked.
+          Wait for God to advance the night.
+        </p>
+      </div>
+    ) : privateState?.mafiaDecisionRequired ? (
+      <>
+        <p className="mt-4 text-sm text-neutral-400">
+          Do you agree with this target? Confirm it, or cancel the proposal
+          so the Mafia can choose again.
+        </p>
+
+        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => submitMafiaDecision("CONFIRM")}
+            disabled={submitting || !socket?.connected}
+            className="flex items-center justify-center gap-2 border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-50"
+          >
+            <CheckCircle2 size={18} />
+            Confirm target
+          </button>
+
+          <button
+            type="button"
+            onClick={() => submitMafiaDecision("CANCEL")}
+            disabled={submitting || !socket?.connected}
+            className="flex items-center justify-center gap-2 border border-red-500/40 bg-red-500/10 px-4 py-3 font-semibold text-red-300 transition hover:bg-red-500/20 disabled:opacity-50"
+          >
+            Cancel proposal
+          </button>
+        </div>
+      </>
+    ) : privateState?.mafiaConfirmed ? (
+      <div className="mt-5 border border-neutral-700 bg-neutral-950 p-4 text-sm text-neutral-300">
+        <CheckCircle2 size={18} className="mb-2 text-emerald-300" />
+
+        {mafiaProposal.proposerId === sessionPlayerId
+          ? "You proposed this target. Waiting for the other Mafia members to respond."
+          : "You confirmed this target. Waiting for the remaining Mafia members."}
+      </div>
+    ) : (
+      <p className="mt-5 text-sm text-neutral-400">
+        Waiting for the other Mafia members to respond.
+      </p>
+    )}
+  </section>
+)}
             {canChooseTarget && (
               <section className="mt-6 border border-neutral-800 bg-neutral-900 p-6">
                 <div className="flex items-center gap-3">
