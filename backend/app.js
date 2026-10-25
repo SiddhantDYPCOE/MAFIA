@@ -9,12 +9,30 @@ import { errorMiddleware } from "./src/middleware/error.middleware.js";
 
 export const app = express();
 
+
+const allowedOrigins = [
+  "https://mafia-olive-xi.vercel.app",
+  "https://localhost",
+  "http://localhost",
+];
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "https://mafia-olive-xi.vercel.app",
+    origin: (origin, callback) => {
+      if (
+        !origin ||
+        allowedOrigins.includes(origin) ||
+        origin === process.env.FRONTEND_URL
+      ) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by Express CORS"));
+      }
+    },
     credentials: true,
   })
 );
+
 
 app.use(express.json());
 
